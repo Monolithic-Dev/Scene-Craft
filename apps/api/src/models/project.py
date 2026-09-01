@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.core.database import Base
 
 if TYPE_CHECKING:
+    from src.models.generation_job import GenerationJob
     from src.models.script import Script
     from src.models.user import User
 
@@ -32,5 +33,8 @@ class Project(Base):
 
     owner: Mapped["User"] = relationship(back_populates="projects")
     scripts: Mapped[list["Script"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+    generation_jobs: Mapped[list["GenerationJob"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
