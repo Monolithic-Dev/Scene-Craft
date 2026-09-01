@@ -5,11 +5,17 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.core.database import Base, get_db
-from src.main import app
+from src.main import _request_log, app
 
 
 @pytest.fixture()
 def client():
+    # The in-process rate limiter (main.py) keys on client host, which
+    # TestClient reports as a fixed value — without a reset here, every test
+    # in the session shares one bucket and later tests start failing with
+    # 429s once the cumulative request count crosses the per-minute limit.
+    _request_log.clear()
+
     engine = create_engine(
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
