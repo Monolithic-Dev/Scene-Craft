@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   api:
-    name: api / lint, typecheck, test
+    name: api / lint, typecheck, test, audit
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,8 +39,11 @@ jobs:
       - name: Test (pytest)
         run: pytest -v
 
+      - name: Dependency audit (pip-audit)
+        run: pip install pip-audit && pip-audit
+
   web:
-    name: web / lint, typecheck, build
+    name: web / lint, typecheck, build, audit
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -62,3 +65,66 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Dependency audit (npm audit)
+        run: npm audit --audit-level=high
+
+  mcp_server:
+    name: mcp_server / lint, typecheck, test, audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcp_server
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: mcp_server/pyproject.toml
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type-check (mypy --strict)
+        run: mypy --strict src
+
+      - name: Test (pytest)
+        run: pytest -v
+
+      - name: Dependency audit (pip-audit)
+        run: pip install pip-audit && pip-audit
+
+  agents:
+    name: agents / lint, typecheck, test, audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agents
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: agents/pyproject.toml
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade pip && pip install -e ".[dev]"
+
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Type-check (mypy --strict)
+        run: mypy --strict orchestrator breakdown_agent shared
+
+      - name: Test (pytest)
+        run: pytest -v
+
+      - name: Dependency audit (pip-audit)
+        run: pip install pip-audit && pip-audit

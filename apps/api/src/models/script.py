@@ -9,6 +9,7 @@ from src.core.database import Base
 
 if TYPE_CHECKING:
     from src.models.project import Project
+    from src.models.scene import Scene
 
 
 class Script(Base):
@@ -26,3 +27,6 @@ class Script(Base):
     )
 
     project: Mapped["Project"] = relationship(back_populates="scripts")
+    scenes: Mapped[list["Scene"]] = relationship(
+        back_populates="script", cascade="all, delete-orphan", order_by="Scene.scene_number"
+    )

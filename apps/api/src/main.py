@@ -7,6 +7,7 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from src.api.internal.router import internal_router
 from src.api.v1.router import api_router
 from src.core.config import get_settings
 from src.core.exceptions import DomainError
@@ -72,3 +73,4 @@ def healthz() -> dict[str, str]:
 
 
 app.include_router(api_router)
+app.include_router(internal_router)

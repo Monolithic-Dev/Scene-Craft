@@ -18,6 +18,7 @@ def test_upload_text_script(client, auth_headers):
     body = resp.json()
     assert body["source_format"] == "text"
     assert body["project_id"] == project_id
+    assert body["job_id"] is not None  # Phase 2: every upload enqueues a generation job
 
 
 def test_upload_empty_script_is_rejected(client, auth_headers):
