@@ -1,12 +1,15 @@
 import io
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, File, UploadFile, status
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from src.api.deps import CurrentUser, DbSession
+from src.core.agent_runner import trigger_breakdown_job
 from src.core.exceptions import ValidationError
+from src.models.generation_job import JobType
 from src.schemas.script import ScriptResponse
+from src.services.job_service import JobService
 from src.services.project_service import ProjectService
 
 router = APIRouter(prefix="/projects/{project_id}/scripts", tags=["scripts"])
@@ -38,6 +41,7 @@ async def upload_script(
     project_id: str,
     db: DbSession,
     current_user: CurrentUser,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),  # noqa: B008 — FastAPI's required pattern for file uploads
 ) -> ScriptResponse:
     raw_bytes = await file.read()
@@ -51,4 +55,10 @@ async def upload_script(
         original_filename=file.filename,
         content_length=len(raw_bytes),
     )
-    return ScriptResponse.model_validate(script)
+
+    job = JobService(db).create_job(project_id=project_id, job_type=JobType.INITIAL_GENERATION)
+    background_tasks.add_task(trigger_breakdown_job, job.id)
+
+    response = ScriptResponse.model_validate(script)
+    response.job_id = job.id
+    return response

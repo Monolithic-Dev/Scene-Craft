@@ -1,7 +1,12 @@
 from fastapi import APIRouter, status
 
 from src.api.deps import CurrentUser, DbSession
-from src.schemas.project import ProjectCreateRequest, ProjectListResponse, ProjectResponse
+from src.schemas.project import (
+    ProjectCreateRequest,
+    ProjectDetailResponse,
+    ProjectListResponse,
+    ProjectResponse,
+)
 from src.services.project_service import ProjectService
 
 router = APIRouter(prefix="/projects", tags=["projects"])
@@ -25,7 +30,21 @@ def list_projects(db: DbSession, current_user: CurrentUser) -> ProjectListRespon
     return ProjectListResponse(projects=[ProjectResponse.model_validate(p) for p in projects])
 
 
-@router.get("/{project_id}", response_model=ProjectResponse)
-def get_project(project_id: str, db: DbSession, current_user: CurrentUser) -> ProjectResponse:
-    project = ProjectService(db).get_owned_project(project_id, owner_id=current_user.id)
-    return ProjectResponse.model_validate(project)
+@router.get("/{project_id}", response_model=ProjectDetailResponse)
+def get_project(project_id: str, db: DbSession, current_user: CurrentUser) -> ProjectDetailResponse:
+    service = ProjectService(db)
+    project = service.get_owned_project(project_id, owner_id=current_user.id)
+    scenes = service.get_breakdown(project_id)
+    # model_validate on a dict so ProjectResponse's ORM fields and the
+    # scenes list (validated per-item via SceneResponse's from_attributes)
+    # combine into one response without a second, duplicate schema.
+    return ProjectDetailResponse.model_validate(
+        {
+            "id": project.id,
+            "title": project.title,
+            "style_reference": project.style_reference,
+            "created_at": project.created_at,
+            "updated_at": project.updated_at,
+            "scenes": scenes,
+        }
+    )
