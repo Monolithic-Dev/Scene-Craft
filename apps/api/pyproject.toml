@@ -1,0 +1,50 @@
+[project]
+name = "scenecraft-api"
+version = "0.1.0"
+description = "SceneCraft control-plane API — auth, projects, script ingestion"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "sqlalchemy>=2.0.35",
+    "alembic>=1.13.2",
+    "pydantic>=2.9.0",
+    "pydantic[email]>=2.9.0",
+    "pydantic-settings>=2.5.0",
+    "python-jose[cryptography]>=3.3.0",
+    "bcrypt>=4.1.0",
+    "python-multipart>=0.0.9",
+    "psycopg2-binary>=2.9.9",
+    "pypdf>=4.3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "httpx>=0.27.0",
+    "ruff>=0.6.0",
+    "mypy>=1.11.0",
+    "types-python-jose>=3.3.4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["src*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
