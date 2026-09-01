@@ -57,7 +57,7 @@ async def upload_script(
     )
 
     job = JobService(db).create_job(project_id=project_id, job_type=JobType.INITIAL_GENERATION)
-    background_tasks.add_task(trigger_breakdown_job, job.id)
+    background_tasks.add_task(trigger_breakdown_job, job.id, project_id)
 
     response = ScriptResponse.model_validate(script)
     response.job_id = job.id

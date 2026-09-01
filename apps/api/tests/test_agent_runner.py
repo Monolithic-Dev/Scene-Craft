@@ -7,7 +7,7 @@ def test_returns_false_and_logs_when_executable_not_configured():
     with patch("src.core.agent_runner.get_settings") as mock_settings:
         mock_settings.return_value.agents_python_executable = ""
         mock_settings.return_value.agents_working_dir = ""
-        launched = trigger_breakdown_job("job-123", popen=lambda *a, **k: None)
+        launched = trigger_breakdown_job("job-123", "proj-123", popen=lambda *a, **k: None)
     assert launched is False
 
 
@@ -24,10 +24,10 @@ def test_spawns_a_process_when_executable_is_configured(tmp_path):
     with patch("src.core.agent_runner.get_settings") as mock_settings:
         mock_settings.return_value.agents_python_executable = str(fake_python)
         mock_settings.return_value.agents_working_dir = str(tmp_path)
-        launched = trigger_breakdown_job("job-123", popen=fake_popen)
+        launched = trigger_breakdown_job("job-123", "proj-123", popen=fake_popen)
 
     assert launched is True
-    assert calls == [[str(fake_python), "-m", "orchestrator.coordinator", "job-123"]]
+    assert calls == [[str(fake_python), "-m", "orchestrator.coordinator", "job-123", "proj-123"]]
 
 
 def test_returns_false_when_spawn_raises_oserror():
@@ -37,6 +37,6 @@ def test_returns_false_when_spawn_raises_oserror():
     with patch("src.core.agent_runner.get_settings") as mock_settings:
         mock_settings.return_value.agents_python_executable = "python"
         mock_settings.return_value.agents_working_dir = ""
-        launched = trigger_breakdown_job("job-123", popen=failing_popen)
+        launched = trigger_breakdown_job("job-123", "proj-123", popen=failing_popen)
 
     assert launched is False

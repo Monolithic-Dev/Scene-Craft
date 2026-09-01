@@ -38,12 +38,17 @@ def _resolve_python_executable(configured: str) -> str | None:
 
 def trigger_breakdown_job(
     job_id: str,
+    project_id: str,
     *,
     popen: PopenFactory = subprocess.Popen,
 ) -> bool:
     """Best-effort spawn of the orchestrator for the given job. Returns
     whether a process was actually launched (tests assert on this instead
     of on process completion, since that depends on a live Gemini key).
+
+    project_id travels alongside job_id because the orchestrator's only
+    other way to learn it would be reading generation_jobs directly — and
+    agents never get direct DB access, only MCP. Cheaper to just pass it.
     """
     settings = get_settings()
     python_executable = _resolve_python_executable(settings.agents_python_executable)
@@ -57,7 +62,7 @@ def trigger_breakdown_job(
     agents_dir = settings.agents_working_dir or str(_DEFAULT_AGENTS_DIR)
     try:
         popen(
-            [python_executable, "-m", "orchestrator.coordinator", job_id],
+            [python_executable, "-m", "orchestrator.coordinator", job_id, project_id],
             cwd=agents_dir,
         )
     except OSError:
