@@ -1,0 +1,113 @@
+# SceneCraft — Database Design
+
+> Read `00-INDEX.md` first for how this fits into the full documentation set. Pairs with `06-API-DESIGN.md`.
+
+## 1. Storage Split (why two databases)
+
+- **Cloud SQL (Postgres)** — relational, durable data with real integrity constraints: users, projects, scripts, scenes, shots, edits, job history. This is the "system of record."
+- **Firestore** — fast-changing, low-latency session/agent-trace state the UI subscribes to live (job step events, agent reasoning log). This data is disposable/regenerable; it does not need relational integrity.
+
+Don't collapse these into one store — the access patterns (transactional writes vs. high-frequency live-subscription reads) are different enough that a single database would compromise one side or the other.
+
+## 2. ER Diagram (textual)
+
+```
+users ──< projects ──< scripts ──< scenes ──< shots ──< shot_frames
+   │            │                                 │
+   │            └──< generation_jobs               └──< shot_edits
+   └──< sessions
+```
+
+## 3. Core Tables
+
+### `users`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| email | varchar(255) | unique, indexed |
+| password_hash | varchar(255) | bcrypt, never store plaintext |
+| created_at | timestamptz | |
+
+### `projects`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| owner_id | UUID (FK → users.id) | indexed |
+| title | varchar(255) | |
+| style_reference | text | nullable — the locked Imagen style prompt for the project |
+| created_at / updated_at | timestamptz | |
+
+### `scripts`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| project_id | UUID (FK → projects.id) | indexed |
+| raw_text | text | |
+| source_format | varchar(20) | `text` \| `pdf` |
+| uploaded_at | timestamptz | |
+
+### `scenes`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| script_id | UUID (FK → scripts.id) | indexed |
+| scene_number | integer | |
+| heading | varchar(255) | e.g. "INT. FERRY - NIGHT" |
+| time_of_day | varchar(50) | |
+
+### `shots`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| scene_id | UUID (FK → scenes.id) | indexed |
+| shot_number | integer | |
+| characters | jsonb | denormalized display list — see note below |
+| location | varchar(255) | |
+| action_summary | text | |
+| suggested_camera | varchar(255) | |
+
+### `shot_frames`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| shot_id | UUID (FK → shots.id) | indexed |
+| image_url | text | Cloud Storage signed URL |
+| alt_text | text | accessibility requirement, auto-generated |
+| generated_at | timestamptz | |
+
+### `shot_edits`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| shot_id | UUID (FK → shots.id) | indexed |
+| field | varchar(100) | which field changed |
+| old_value / new_value | text | |
+| requested_by | UUID (FK → users.id) | |
+| created_at | timestamptz | |
+
+### `generation_jobs`
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID (PK) | |
+| project_id | UUID (FK → projects.id) | indexed |
+| job_type | enum | `initial_generation` \| `iteration` |
+| status | enum | `queued` \| `running` \| `complete` \| `failed_needs_review` |
+| deployed_app_url | text | nullable until App-Build Agent succeeds |
+| error_detail | text | nullable |
+| created_at / completed_at | timestamptz | |
+
+## 4. Indexes
+
+- `shots(scene_id)`, `scenes(script_id)`, `shot_frames(shot_id)` — standard FK indexes for join performance.
+- `generation_jobs(project_id, status)` — composite index for the "current job status" dashboard query, which is hit on every page load.
+- `projects(owner_id)` — for the user's project-list view.
+
+## 5. Normalization Note
+
+Schema is normalized to 3NF, with one deliberate exception: `characters` is stored as JSONB on `shots` rather than a separate join table. This is a denormalized *display* list, not something queried by character in this version. Document this tradeoff explicitly in your own repo — if character-level analytics ever becomes a requirement (e.g. "how many shots does this character appear in across the project"), that's the trigger to normalize it into a real `characters` + `shot_characters` join table.
+
+## 6. Migration Strategy
+
+- Every schema change ships as an Alembic migration file — reversible (`upgrade`/`downgrade` both implemented), never a manual `ALTER TABLE` run by hand against a live database.
+- Migrations run in CI against a throwaway Postgres instance before merge — a migration that doesn't apply cleanly should fail the build, not fail in production.
+- Migration file naming: `{revision}_{short_description}.py`, generated via `alembic revision --autogenerate -m "description"` and then hand-reviewed — autogenerate is a draft, not a merge-ready diff.
