@@ -36,6 +36,14 @@ See [`docs/07-FOLDER-STRUCTURE.md`](docs/07-FOLDER-STRUCTURE.md) for the rationa
 
 ## Running locally
 
+### Database
+
+```bash
+docker compose up -d postgres
+```
+
+Brings up a local Postgres matching Cloud SQL's behavior more closely than the SQLite fallback. SQLite still works out of the box for fast iteration — see `apps/api/.env.example`.
+
 ### Backend
 
 ```bash

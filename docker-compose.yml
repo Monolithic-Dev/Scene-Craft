@@ -1,0 +1,25 @@
+# Local development infra only — never used in staging/prod (those are
+# Cloud SQL + Cloud Memorystore, provisioned via infra/terraform in Phase 6).
+# Brings up a real Postgres so local dev is closer to production behavior
+# than the SQLite fallback; SQLite remains supported for fast iteration
+# (see apps/api/.env.example).
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: scenecraft
+      POSTGRES_PASSWORD: scenecraft
+      POSTGRES_DB: scenecraft
+    ports:
+      - "5432:5432"
+    volumes:
+      - scenecraft-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U scenecraft"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  scenecraft-postgres-data:
