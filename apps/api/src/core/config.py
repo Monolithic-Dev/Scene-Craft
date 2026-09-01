@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # Internal API (mcp_server -> apps/api service-to-service calls). A shared
+    # secret is the Phase 2-5 local-dev stand-in for the real IAM/mTLS-based
+    # service boundary Phase 6 provisions via Terraform — same pattern as the
+    # in-process rate limiter flagged in main.py.
+    internal_service_key: str = _INSECURE_DEFAULT_JWT_SECRET
+
     # Uploads
     max_script_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
     max_script_pages: int = 50
@@ -35,13 +41,26 @@ class Settings(BaseSettings):
     # CORS
     allowed_origins: list[str] = ["http://localhost:3000"]
 
+    # Agent orchestration trigger (see core/agent_runner.py). Empty by
+    # default: a job stays QUEUED, honestly, until a developer points this
+    # at agents/.venv's interpreter (see agents/README or the root README).
+    agents_python_executable: str = ""
+    agents_working_dir: str = ""
+
     @model_validator(mode="after")
-    def _forbid_insecure_jwt_secret_outside_dev(self) -> "Settings":
-        is_insecure = self.jwt_secret_key == _INSECURE_DEFAULT_JWT_SECRET
-        if self.environment != "development" and is_insecure:
+    def _forbid_insecure_secrets_outside_dev(self) -> "Settings":
+        if self.environment == "development":
+            return self
+        insecure_fields = [
+            name
+            for name in ("jwt_secret_key", "internal_service_key")
+            if getattr(self, name) == _INSECURE_DEFAULT_JWT_SECRET
+        ]
+        if insecure_fields:
             raise ValueError(
-                "jwt_secret_key is still the insecure placeholder value. Set a real "
-                "secret via Secret Manager before starting outside 'development'."
+                f"{', '.join(insecure_fields)} still resolve to the insecure placeholder "
+                "value. Set real secrets via Secret Manager before starting outside "
+                "'development'."
             )
         return self
 
