@@ -13,7 +13,7 @@ Stand up the full control-plane skeleton: auth, project CRUD, and script upload 
 
 ## Prerequisites
 
-- Python 3.12, Node 20, Postgres available locally (or SQLite for fast local dev — `DATABASE_URL` should support both transparently)
+- Python 3.12, Node 20, Postgres available locally (or SQLite for fast local dev — `DATABASE_URL` should support both transparently). A root `docker-compose.yml` bringing up local Postgres (and, from Phase 6 onward, Redis) is in scope for this phase — it's the fastest way for a fresh clone to get a real Postgres instance running without a manual install, and closer to the Cloud SQL behavior later phases depend on than SQLite is.
 - A GCP project is **not** required yet — this phase runs entirely locally
 
 ---
@@ -25,7 +25,7 @@ Create the full folder tree from `07-FOLDER-STRUCTURE.md`. For Phase 1, only `ap
 
 ### Step 2 — Backend core layer (`apps/api/src/core/`)
 Build, in this order:
-1. `config.py` — a `Settings` class (Pydantic `BaseSettings`) loading from environment: `environment`, `database_url`, `jwt_secret_key`, `jwt_algorithm`, `access_token_expire_minutes`, `max_script_upload_bytes`, `max_script_pages`, `rate_limit_requests_per_minute`, `allowed_origins`. Provide a cached `get_settings()` accessor.
+1. `config.py` — a `Settings` class (Pydantic `BaseSettings`) loading from environment: `environment`, `database_url`, `jwt_secret_key`, `jwt_algorithm`, `access_token_expire_minutes`, `max_script_upload_bytes`, `max_script_pages`, `rate_limit_requests_per_minute`, `allowed_origins`. Provide a cached `get_settings()` accessor. `jwt_secret_key` defaults to an obviously-fake placeholder for local dev convenience — but add a `model_validator` that raises if `environment != "development"` and the value still equals that placeholder, so a misconfigured staging/prod deploy fails at startup instead of silently running with a guessable secret.
 2. `database.py` — SQLAlchemy engine + `SessionLocal` + a `Base` declarative class + a `get_db()` FastAPI dependency yielding a request-scoped session.
 3. `security.py` — password hashing and JWT. **Use `bcrypt` directly, not `passlib`** — passlib's bcrypt-backend version-detection is unmaintained and breaks against modern `bcrypt` releases (this is a real, previously-hit issue, not a hypothetical). Reject passwords over 72 bytes up front (bcrypt's hard limit) rather than letting them silently truncate. Provide `hash_password`, `verify_password`, `create_access_token(subject) -> str`, and `decode_access_token(token) -> str` (raising a `TokenError` on failure).
 4. `exceptions.py` — a `DomainError` base with `code` and `status_code`, and concrete subclasses: `ValidationError` (400), `UnauthorizedError` (401), `ForbiddenError` (403), `NotFoundError` (404), `ConflictError` (409).
@@ -126,6 +126,7 @@ If you add functionality beyond this list, add tests for it too — this list is
 3. **String forward-references in SQLAlchemy `relationship()`** — `Mapped["Project"]` needs a `TYPE_CHECKING`-guarded import of `Project` in the same file, or `ruff`/`mypy` will flag it as an undefined name even though it works fine at runtime.
 4. **404 vs. 403 ordering** — always check "does this resource exist" before "does the caller own it." Reversing this order either leaks existence information or produces confusing error messages.
 5. **Rate-limiting state in a multi-instance deployment** — the in-process limiter built in this phase is correct for local dev and a single Cloud Run instance only. Don't forget to swap it for the Redis-backed version in Phase 6 — flag it clearly in code comments now so it isn't forgotten later.
+6. **A hardcoded settings default that's also a valid production value** — `jwt_secret_key`'s placeholder default is convenient for local dev but must never be able to reach a non-development environment silently. Fail fast on it (see Step 2) rather than relying on someone remembering to set the real value.
 
 ## Commit Message
 `feat(phase-1): project scaffolding, auth, and script upload`

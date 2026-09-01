@@ -48,8 +48,20 @@
 
 Every PR must pass, in this order, before merge: lint → type-check → unit tests → integration tests → build. A red step blocks merge — there is no "merge anyway, fix later" path in this project's discipline, hackathon deadline or not. A last-minute broken build the night before submission is a far worse outcome than a slightly smaller feature set that actually works.
 
+Dependency hygiene is part of this gate, not a separate concern: Dependabot (`.github/dependabot.yml`) keeps `pip`/`npm` dependencies patched, and CI runs `pip-audit`/`npm audit` on the same schedule as lint/type-check so a known-vulnerable transitive dependency fails the same way a type error does.
+
 ## 6. Commit Discipline
 
 - Conventional commit prefixes (`feat`, `fix`, `docs`, `refactor`, `test`, `chore`) matching the phase's stated commit message in `08-IMPLEMENTATION-PLAN.md`.
 - One phase's work per set of commits — don't mix Phase 3 frame-generation code into a commit whose message claims Phase 2 breakdown work.
 - Every commit that changes the schema includes its migration file in the same commit — never a follow-up "oops, forgot the migration" commit.
+
+## 7. Branching, PR & Merge Workflow
+
+- **Trunk-based, short-lived branches.** `main` is always deployable. Every change — a full phase, a fix, a docs update — happens on its own branch off `main`; nothing is committed directly to `main`, including by whoever's driving the build.
+- **Branch naming:** `feat/phase-N-<short-name>` for phase work (e.g. `feat/phase-2-breakdown-agent`), `fix/<short-name>` for bug fixes, `docs/<short-name>` for documentation-only changes, `chore/<short-name>` for tooling/infra housekeeping unrelated to a specific phase.
+- **Every branch merges via pull request** — even solo, even on a hackathon clock. The PR is where the CI gate in §5 actually blocks a bad merge, and where the diff gets one real read before it becomes part of `main`'s history.
+- **PR description states** what changed, why, and how it was verified — the phase's testing checklist for phase work, or the specific repro for a fix. Link the relevant doc (phase spec, or the section of a design doc the PR implements).
+- **Merge strategy:** squash-merge for `fix/`/`docs`/`chore` branches, so `main`'s history is one commit per discrete change. Regular merge (preserving commits) for `feat/phase-N-*` branches whose commits each represent a real, individually-reviewable step — so `main`'s history mirrors the build order in `08-IMPLEMENTATION-PLAN.md` and the relevant `docs/Phases/PHASE-0N-*.md`.
+- **Never force-push a branch once it's open as a PR.** Rebase-and-force-push is fine on a branch only you're working on, before anyone (including a future re-read of this repo) has reviewed it.
+- **Delete branches after merge.** A pile of merged-but-undeleted branches makes `git branch -a` useless as a signal of what's actually in flight.
