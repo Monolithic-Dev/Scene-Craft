@@ -54,6 +54,7 @@ users ──< projects ──< scripts ──< scenes ──< shots ──< shot
 | scene_number | integer | |
 | heading | varchar(255) | e.g. "INT. FERRY - NIGHT" |
 | time_of_day | varchar(50) | |
+| needs_review | boolean, default false | set by the Breakdown Agent when a scene fails schema validation twice (see `PHASE-02-BREAKDOWN-AGENT.md` §3) — the scene is still persisted with whatever partial data is available, flagged rather than dropped |
 
 ### `shots`
 | Column | Type | Notes |
@@ -63,8 +64,10 @@ users ──< projects ──< scripts ──< scenes ──< shots ──< shot
 | shot_number | integer | |
 | characters | jsonb | denormalized display list — see note below |
 | location | varchar(255) | |
+| time_of_day | varchar(50) | added in Phase 2 — the Breakdown Agent's `ShotOutput` schema resolves this per shot (a shot can imply a different time than its scene heading's nominal value); "UNSPECIFIED" when genuinely unknown, never guessed |
 | action_summary | text | |
 | suggested_camera | varchar(255) | |
+| dialogue_snippet | text, nullable | added in Phase 2 — matches `ShotOutput.dialogue_snippet` from `04-AGENT-ARCHITECTURE.md` §2, omitted from the original table draft |
 
 ### `shot_frames`
 | Column | Type | Notes |
