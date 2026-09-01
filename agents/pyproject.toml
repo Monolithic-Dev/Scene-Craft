@@ -5,7 +5,7 @@ description = "SceneCraft's agent orchestrator and per-agent implementations"
 requires-python = ">=3.12"
 dependencies = [
     "google-genai>=0.3.0",
-    "mcp>=1.2.0,<2.0.0",
+    "mcp>=1.2.0,<3.0.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
 ]
