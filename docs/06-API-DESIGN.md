@@ -88,3 +88,5 @@ This is the endpoint (or its Firestore-subscription equivalent) the agent-trace 
 - JWT, `HS256`, subject claim = user ID, expiry = 60 minutes by default (configurable).
 - Every protected route resolves `Authorization: Bearer <token>` → user via a shared dependency — implement this once, reuse everywhere, never duplicate the decode logic per route.
 - On expiry, the client re-authenticates via `/auth/login` — there is no refresh-token flow in this version; document that as a known Should-have for the post-hackathon roadmap if you add one.
+- **No password-reset/account-recovery endpoint in this version either** — same reasoning as the refresh-token gap above (see `01-PRD.md` §7). A user who forgets their password has no self-service recovery path until this is built. Flag this explicitly in any judge-facing docs rather than letting it be discovered.
+- `jwt_secret_key` must never resolve to its insecure placeholder default outside `environment=development` — the app should refuse to start rather than run with a guessable secret (see `PHASE-01-FOUNDATIONS.md` Common Pitfalls).

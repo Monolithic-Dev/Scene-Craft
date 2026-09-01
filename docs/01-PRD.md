@@ -72,6 +72,7 @@ Give any production, regardless of budget, a multi-agent system that reads a scr
 - Multi-speaker scene read-aloud via Gemini TTS for tone-setting
 - Shot-list export (CSV/PDF) for real production use
 - Auth + per-project workspace (multi-user)
+- Password reset / account recovery flow (email-based token) — a real gap in Phase 1's signup/login-only auth, deliberately deferred rather than an oversight: Phase 1 ships without it (see `06-API-DESIGN.md` §10 for the same call on refresh tokens), and it's the first thing to add post-hackathon before this touches a real user's account they can't get back into.
 
 **Could have**
 - Shot-composition critique agent (rule-of-thirds, 180-degree line checks)
