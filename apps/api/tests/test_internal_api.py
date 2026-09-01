@@ -69,9 +69,7 @@ def test_write_breakdown_persists_scenes_and_shots(client, auth_headers):
         ]
     }
     resp = client.post(
-        f"/internal/v1/projects/{project_id}/scripts/{script_id}/breakdown",
-        json=payload,
-        headers=_HEADERS,
+        f"/internal/v1/scripts/{script_id}/breakdown", json=payload, headers=_HEADERS
     )
     assert resp.status_code == 200
     assert resp.json() == {"scenes_written": 1, "shots_written": 1}
@@ -82,11 +80,11 @@ def test_write_breakdown_persists_scenes_and_shots(client, auth_headers):
 
 
 def test_write_breakdown_rejects_invalid_payload(client, auth_headers):
-    project_id, script_id = _create_project_with_script(client, auth_headers)
+    _, script_id = _create_project_with_script(client, auth_headers)
     # Missing every required shot field fails Pydantic validation before it
     # ever reaches BreakdownService — not silently coerced.
     resp = client.post(
-        f"/internal/v1/projects/{project_id}/scripts/{script_id}/breakdown",
+        f"/internal/v1/scripts/{script_id}/breakdown",
         json={"scenes": [{"scene_number": 1, "heading": "X", "shots": [{"shot_number": 1}]}]},
         headers=_HEADERS,
     )
@@ -94,11 +92,8 @@ def test_write_breakdown_rejects_invalid_payload(client, auth_headers):
 
 
 def test_write_breakdown_rejects_unknown_script(client, auth_headers):
-    project_id, _ = _create_project_with_script(client, auth_headers)
     resp = client.post(
-        f"/internal/v1/projects/{project_id}/scripts/does-not-exist/breakdown",
-        json={"scenes": []},
-        headers=_HEADERS,
+        "/internal/v1/scripts/does-not-exist/breakdown", json={"scenes": []}, headers=_HEADERS
     )
     assert resp.status_code == 404
 
