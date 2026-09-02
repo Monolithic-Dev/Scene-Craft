@@ -30,7 +30,7 @@
 | Project detail (breakdown, frames, deploy status) | `/dashboard/[projectId]` | Phases 2–4 |
 | Agent trace panel (live) | embedded in project detail | Phase 5 |
 | Iteration chat | embedded in project detail | Phase 5 |
-| Deployed previs app (Replit-hosted, separate codebase) | external URL | Phase 4 |
+| Previs app (SceneCraft's own route, served on Replit) | `/projects/[projectId]/previs` | Phase 4 |
 
 ---
 
@@ -122,8 +122,8 @@
 │  MIDNIGHT FERRY                                           │
 │  ▨▨▨▨                                                      │
 │                                                            │
-│  ┌─ Live previs app ──────────────────────────────────┐  │
-│  │  🔗 scenecraft-midnight-ferry.replit.app      [Open]│  │
+│  ┌─ Live previs ──────────────────────────────────────┐  │
+│  │  🔗 /projects/midnight-ferry/previs           [Open]│  │
 │  │  Last verified: just now ✓                          │  │
 │  └────────────────────────────────────────────────────┘  │
 │                                                            │
@@ -189,7 +189,7 @@ flowchart LR
     Login["/"] -->|successful auth| Dashboard["/dashboard"]
     Dashboard -->|select project| ProjectDetail["/dashboard/[id]"]
     ProjectDetail -->|back| Dashboard
-    ProjectDetail -->|open deployed app| ExternalApp[[Replit-hosted previs app]]
+    ProjectDetail -->|open previs| PrevisApp[["/projects/[id]/previs"]]
     Dashboard -->|no token found| Login
     ProjectDetail -->|401 on any call| Login
 ```

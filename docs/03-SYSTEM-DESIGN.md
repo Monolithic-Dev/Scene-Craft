@@ -35,17 +35,19 @@
                                           │
                                ┌──────────▼───────────┐
                                │  App-Build Agent      │
-                               │  (Replit Agent API)   │
-                               │  generates + deploys  │
+                               │  (Gemini-driven,       │
+                               │  constrained codegen)  │
                                └──────────┬────────────┘
                                           │
                                ┌──────────▼───────────┐
                                │  Critic/Evaluator     │
                                │  Agent (QA pass on    │
-                               │  generated app)       │
+                               │  generated content)    │
                                └──────────┬────────────┘
                                           │
-                                 Deployed Previs App (Replit-hosted URL)
+                            SceneCraft's own /previs route,
+                          served from SceneCraft itself on Replit
+                                 (replit.app/replit.dev URL)
 
   Cross-cutting: Pub/Sub (job events) · Cloud Storage (scripts, frames) · BigQuery (history)
   Cloud Monitoring/Logging + Grafana dashboards · Secret Manager · Cloud Run for all services
@@ -87,7 +89,7 @@ GitHub Actions runs lint/type-check/unit+integration tests on every PR, builds D
 
 ## 5. Security
 
-- Secret Manager for all keys (Gemini, Replit, DB credentials).
+- Secret Manager for all keys (Gemini, DB credentials). Replit needs no runtime key from SceneCraft — see `04-AGENT-ARCHITECTURE.md` §4 and `Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0/§5.
 - IAM least-privilege service accounts per Cloud Run service — the Agent Orchestrator's service account cannot, for example, directly modify Cloud SQL; it goes through the Project Service's API.
 - Input validation on every script upload (file-type/size limits) as prompt-injection surface reduction.
 - Gemini safety settings configured per the hackathon's guardrail resources.
@@ -104,7 +106,7 @@ GitHub Actions runs lint/type-check/unit+integration tests on every PR, builds D
 2. Agent Orchestrator picks up the job, invokes the Planner, which sequences: Breakdown → Frames → App-Build → Critic.
 3. Breakdown Agent parses the script (with RAG-assisted chunk retrieval for long scripts) into structured scenes/shots via the MCP write-tool.
 4. Frame Generation Agent fans out one Imagen call per shot in parallel, writing image URLs back via MCP.
-5. App-Build Agent assembles the full project state into a spec and calls the Replit Agent API to generate + deploy a Next.js previs app.
-6. Critic Agent fetches the deployed app and verifies its content matches the expected shot structure; on mismatch, it triggers one bounded corrective retry through the App-Build Agent.
+5. App-Build Agent serializes the full project state into a deterministic data file and generates a small, schema-validated styling/customization JSON via a bounded Gemini call; SceneCraft's own `/projects/{id}/previs` route renders both against a fixed, pre-tested app shell.
+6. Critic Agent compares the generated data file against the expected shot structure; on mismatch, it triggers one bounded corrective retry through the App-Build Agent.
 7. UI's agent-trace panel has been streaming every one of these steps live via Pub/Sub → Firestore-backed subscription the whole time.
 8. Director later submits "make scene 4 night-time" → Iteration Agent parses the diff → App-Build Agent redeploys incrementally → Critic re-verifies just the affected shots.

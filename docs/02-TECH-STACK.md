@@ -43,7 +43,7 @@ Every choice below is justified — nothing is included "because it's popular." 
 
 | Technology | Why |
 |---|---|
-| Replit Agent API | The literal mechanism that generates and deploys the previs web app — this is the deep, structurally-necessary partner integration the judging criteria explicitly reward over a superficial API call |
+| Replit (hosting + dev-process) | The hackathon's actual Replit requirement is a build-process + hosting-target requirement about the SceneCraft submission itself, not a callable runtime API — see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0/§5. SceneCraft is deployed on Replit (replit.app/replit.dev) and a real piece of it is built via a genuine Replit Agent session. |
 
 ## Observability
 
@@ -69,5 +69,5 @@ Every choice below is justified — nothing is included "because it's popular." 
 ## Explicitly not used (and why)
 
 - **Kubernetes/GKE** — Cloud Run gives the same container-based deployment model with far less operational overhead for a project of this scope; reach for GKE only if you outgrow Cloud Run's concurrency/model limits.
-- **A custom low-code/app-generation layer** — this is precisely what Replit's Agent API already does well; building your own would dilute the partner integration instead of deepening it.
+- **Unconstrained/freeform LLM code generation for the previs app** — no public Replit API exists to delegate this to, and running arbitrary generated code live is a reliability risk anyway; the App-Build Agent uses constrained scaffolding instead (a fixed, tested app shell + a bounded, schema-validated content layer) — see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §1.
 - **A second LLM provider alongside Gemini** — the hackathon explicitly rewards Gemini/Google Cloud depth; splitting model usage adds complexity without adding judging credit.

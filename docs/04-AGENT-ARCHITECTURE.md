@@ -41,24 +41,26 @@ Orchestration model: a **LangGraph state graph** hosted inside a single Agent Or
 
 ## 4. App-Build Agent
 
-- **Responsibilities:** Translate the current structured project data into a working, deployed previs web app via Replit's Agent API.
-- **Input:** Full `ProjectState` (scenes/shots/frame URLs), previous app version reference (for incremental builds).
-- **Output:** Deployed app URL + build log.
-- **Tools:** `replit_agent_generate` (Replit Agent API — code generation), `replit_agent_deploy` (Replit deployment API).
-- **Prompt (summarized, sent as the spec to Replit's agent):** "Build a Next.js app with: a scene navigator sidebar, a shot detail view showing the storyboard frame + action summary + camera suggestion, and a shot-list export button. Data source: the attached JSON. Keep styling clean and minimal."
-- **Memory:** Keeps the last successful build's spec diff so incremental iterations send a minimal changeset, not a full regeneration, where possible.
-- **Failure handling:** On build/deploy failure, captures the Replit agent's error output and re-invokes with the error appended to the prompt (max 2 retries) before escalating to the Coordinator as `failed_needs_review`.
-- **Communication protocol:** Synchronous call to the Replit Agent API from within an async Cloud Run job (not in the user-facing request path).
+> Note: no public "Replit Agent API" exists for a normal account, and the hackathon's actual Replit requirement is a build-process + hosting-target requirement about the SceneCraft submission itself, not a per-project runtime API call — see `Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0 for the full correction. This agent is SceneCraft's own capability.
+
+- **Responsibilities:** Translate the current structured project data into SceneCraft's own working previs page (`/projects/{id}/previs`) — a deterministic data layer plus a bounded, schema-validated styling/customization layer, rendered by a fixed, pre-tested app shell (constrained scaffolding, not freeform code generation — see `Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §1).
+- **Input:** Full `ProjectState` (scenes/shots/frame URLs), previous customization JSON reference (for incremental builds).
+- **Output:** Data file + customization JSON (the previs route renders these directly — there is no separate deploy step per project).
+- **Tools:** `write_previs_data` (MCP — persists the generated data file), Gemini call for the bounded customization JSON only.
+- **Prompt (summarized, the one LLM-authored surface):** "Given this project's title, style reference, and tone, produce JSON matching this schema: `{title, accent_color, tone_note}`. Do not include anything else — the app shell already defines structure and content." Schema-validated on return; malformed output retries once, then falls back to defaults rather than failing the job.
+- **Memory:** Keeps the last successful customization JSON so incremental iterations diff against it, not a full regeneration, where possible.
+- **Failure handling:** On persistent schema-validation failure, falls back to defaults and proceeds (styling is cosmetic, never worth failing a job over); on data-file write failure, retries then escalates to the Coordinator as `failed_needs_review`.
+- **Communication protocol:** Runs from within an async Cloud Run job (not in the user-facing request path); no external API dependency beyond Gemini, which the rest of the system already depends on.
 
 ## 5. Critic / Evaluator Agent
 
-- **Responsibilities:** Verify the deployed app actually reflects the intended project state before marking a job complete.
-- **Input:** Deployed app URL, expected shot count/structure from `ProjectState`.
+- **Responsibilities:** Verify the generated previs content actually reflects the intended project state before marking a job complete.
+- **Input:** The generated data file + customization JSON, expected shot count/structure from `ProjectState`.
 - **Output:** Pass/fail verdict + diagnostic notes.
-- **Tools:** `fetch_rendered_page` (headless fetch/screenshot), `compare_structure` (DOM/content diff against expectation).
-- **Prompt (summarized):** "Given the expected shot list and the rendered app's content, verify every shot appears with its correct frame and summary. Report any missing or mismatched shots."
+- **Tools:** `compare_structure` (data-file diff against expectation), schema validator for the customization JSON.
+- **Prompt:** None required for the structural check (deterministic comparison); no LLM call needed on the happy path.
 - **Memory:** None — stateless verification per run.
-- **Failure handling:** On mismatch, sends corrective feedback back to the App-Build Agent for one bounded retry; if still failing, surfaces to the user with specifics rather than silently shipping a broken app.
+- **Failure handling:** On mismatch, sends corrective feedback back to the App-Build Agent for one bounded retry; if still failing, surfaces to the user with specifics rather than silently shipping broken previs content.
 - **Communication protocol:** Direct handoff to App-Build Agent on retry; otherwise reports terminal status to Coordinator.
 
 ## 6. Iteration Agent

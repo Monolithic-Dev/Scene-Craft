@@ -24,7 +24,7 @@ flowchart TB
     subgraph Agents["Agent Pipeline"]
         BA[Script/Shot<br/>Breakdown Agent]
         FA[Storyboard Frame<br/>Generation Agent]
-        AB[App-Build Agent<br/>Replit Agent API]
+        AB[App-Build Agent<br/>constrained Gemini codegen]
         CA[Critic/Evaluator<br/>Agent]
         IA[Iteration Agent]
     end
@@ -42,7 +42,7 @@ flowchart TB
         GRAF[Grafana Dashboards]
     end
 
-    ReplitApp[["Deployed Previs App<br/>(Replit-hosted URL)"]]
+    PrevisRoute[["SceneCraft's own /previs route<br/>(served on Replit — replit.app/replit.dev URL)"]]
 
     UI -->|HTTPS/JWT| GW
     GW --> PS
@@ -54,8 +54,8 @@ flowchart TB
     IA --> AB
     BA --> CS
     FA --> CS
-    AB --> ReplitApp
-    CA --> ReplitApp
+    AB --> PrevisRoute
+    CA --> PrevisRoute
     AO --> BQ
     Agents -.trace spans.-> OTEL --> GRAF
     UI -.live subscription.-> FS
@@ -77,8 +77,8 @@ stateDiagram-v2
     FrameGeneration --> AppBuild: all frames complete/flagged
     Iterating --> AppBuild: diff applied
 
-    AppBuild --> Critic: deploy succeeds
-    AppBuild --> NeedsReview: deploy fails twice
+    AppBuild --> Critic: generation succeeds
+    AppBuild --> NeedsReview: generation fails twice
 
     Critic --> Complete: verification passes
     Critic --> AppBuild: mismatch found (1 bounded retry)
@@ -90,7 +90,7 @@ stateDiagram-v2
 
 ---
 
-## 3. Sequence Diagram — Initial Generation (script upload → deployed app)
+## 3. Sequence Diagram — Initial Generation (script upload → live previs)
 
 ```mermaid
 sequenceDiagram
@@ -104,7 +104,6 @@ sequenceDiagram
     participant FA as Frame Agent
     participant AB as App-Build Agent
     participant CA as Critic Agent
-    participant Replit as Replit Agent API
 
     Priya->>UI: Upload script.pdf
     UI->>GW: POST /projects/{id}/scripts
@@ -122,19 +121,18 @@ sequenceDiagram
     FA-->>Orch: frame URLs + alt text
     Orch-->>UI: trace: frames complete
 
-    Orch->>AB: build + deploy app
-    AB->>Replit: generate + deploy spec
-    Replit-->>AB: deployed app URL
-    AB-->>Orch: app URL
+    Orch->>AB: build previs content
+    AB->>AB: serialize data file + bounded Gemini customization call
+    AB-->>Orch: data file + customization JSON ready
     Orch-->>UI: trace: app-build complete
 
-    Orch->>CA: verify deployed app
-    CA->>Replit: fetch rendered page
+    Orch->>CA: verify generated content
+    CA->>CA: compare data file against expected ProjectState
     CA-->>Orch: verdict: pass
-    Orch-->>UI: trace: complete, app URL ready
+    Orch-->>UI: trace: complete, previs ready
 
-    Priya->>UI: Click deployed app link
-    UI->>Replit: open previs app
+    Priya->>UI: Click "open previs" link
+    UI->>UI: navigate to /projects/{id}/previs
 ```
 
 ---

@@ -17,7 +17,7 @@ Turn a working, deployed system into a complete, judge-ready submission: a repo 
 
 - [ ] Hosted URL to the live project
 - [ ] 3-minute demo video: shows the **actual product functioning**, not a cinematic trailer — uploaded to YouTube or Vimeo, publicly visible, in English or with English subtitles
-- [ ] Public open-source repository containing all source code, assets, and instructions needed to run it, demonstrating actual runtime use of Google Cloud and the Replit partner service (imported and called in code — not merely named in the README)
+- [ ] Public open-source repository containing all source code, assets, and instructions needed to run it, demonstrating actual runtime use of Google Cloud (Gemini/Vertex AI imported and called in code, not merely named in the README) — Replit's requirement is structurally different (build-process + hosting, not a runtime call): verify separately that the live URL is genuinely `replit.app`/`replit.dev` and that the PR from a real Replit Agent session (`PHASE-04-APP-BUILD-AND-CRITIC.md` §5b) is in the repo's history
 - [ ] A complete open-source license file, detectable and visible at the top of the repo (GitHub's "About" section license badge)
 - [ ] Partner track selected in the Devpost submission form (**Replit**)
 - [ ] Completed Devpost submission form
@@ -38,7 +38,7 @@ The Phase 1 README gets a final rewrite for a judge audience, not a contributor 
 ## 3. Judge Guide (`docs/judge-guide.md`)
 
 A short document answering, explicitly, the exact four judging criteria from the hackathon (Technological Implementation, Design, Potential Impact, Quality of the Idea) — one paragraph each, pointing to specific evidence:
-- **Technological Implementation:** point to the multi-agent architecture (`04-AGENT-ARCHITECTURE.md`), the depth of the Replit integration (`PHASE-04-APP-BUILD-AND-CRITIC.md` section 1's rationale), and the observability/security work from Phase 6.
+- **Technological Implementation:** point to the multi-agent architecture (`04-AGENT-ARCHITECTURE.md`), the App-Build/Critic Agent's constrained-codegen design (`PHASE-04-APP-BUILD-AND-CRITIC.md` §1) as the genuine differentiator, the honest handling of the Replit build+host requirement (§0/§5 of the same doc), and the observability/security work from Phase 6.
 - **Design:** point to the deployed previs app itself and the live agent-trace UI — a complete product experience, not a bare API.
 - **Potential Impact:** point to the specific personas in `01-PRD.md` §5 and the concrete cost/time comparison (weeks of storyboard-artist time vs. minutes).
 - **Quality of the Idea:** point to the market-gap analysis in `01-PRD.md` §6 — why this specific combination (script understanding + autonomous app deployment) doesn't exist elsewhere.
@@ -53,14 +53,14 @@ This document exists because judges review many submissions quickly — making t
 | Hook | 0:00–0:15 | The problem in one sentence, stated over a shot of a blank page/script — "This is every indie director's starting point. Here's what SceneCraft does with it." |
 | Upload → Breakdown | 0:15–0:45 | Real script upload, live agent-trace panel showing the Breakdown Agent working |
 | Frames | 0:45–1:15 | Storyboard frames appearing, style consistency visible across shots |
-| App-Build (the centerpiece) | 1:15–2:00 | The App-Build Agent invoking Replit live, the deployed app appearing, a quick click-through of the navigable previs app |
+| App-Build (the centerpiece) | 1:15–2:00 | The App-Build Agent generating the previs content live, the Critic Agent's verification pass visible in the trace panel, a quick click-through of the navigable previs app running on the `replit.app` URL |
 | Iteration | 2:00–2:40 | Type a plain-English edit, watch the trace panel, show the redeployed app reflecting the change |
 | Close | 2:40–3:00 | One sentence on impact/audience, the deployed URL and repo link on screen |
 
 **Recording practices:**
 - Use a real script, not a toy one-liner — a thin demo input undersells the breakdown agent's actual capability.
 - Rehearse against the **actual deployed staging/production environment** from Phase 6, not localhost — timing and reliability differ, and judges may click through to the live URL themselves afterward.
-- If Replit's agent generation time is inherently variable (per the risk noted in `01-PRD.md` §11), either genuinely wait it out on camera with a brief voiceover explaining what's happening, or use a clearly-labeled speed-up cut — don't hide a hard cut as if it were real-time, since the rules require the video to show the product actually functioning.
+- If the App-Build/Critic generation step takes more than a couple seconds on camera, either genuinely wait it out with a brief voiceover explaining what's happening, or use a clearly-labeled speed-up cut — don't hide a hard cut as if it were real-time, since the rules require the video to show the product actually functioning.
 - Captions/subtitles in English, per the submission requirement, even if the narration is already in English — don't skip this.
 
 ## 5. Pitch Materials

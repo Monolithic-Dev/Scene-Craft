@@ -34,13 +34,12 @@ Build at minimum three dashboards:
 
 ## 3. Secret Manager Migration
 
-Audit every environment variable introduced across Phases 1–5. Anything that is a credential (Gemini API key, Replit API key, DB password, JWT secret) moves to Secret Manager, referenced by Cloud Run's native Secret Manager integration (mounted as env vars at deploy time, never baked into the container image or committed to `.env`). Non-secret configuration (feature flags, log levels) can stay as plain Cloud Run environment variables — don't over-engineer this distinction, but don't blur it either.
+Audit every environment variable introduced across Phases 1–5. Anything that is a credential (Gemini API key, DB password, JWT secret) moves to Secret Manager, referenced by Cloud Run's native Secret Manager integration (mounted as env vars at deploy time, never baked into the container image or committed to `.env`). Non-secret configuration (feature flags, log levels) can stay as plain Cloud Run environment variables — don't over-engineer this distinction, but don't blur it either. Replit needs no API key from SceneCraft (see `PHASE-04-APP-BUILD-AND-CRITIC.md` §0/§5) — nothing to migrate there.
 
 **Checklist of what must move:**
 - [ ] `JWT_SECRET_KEY`
 - [ ] Database connection string/password
 - [ ] Gemini API key
-- [ ] Replit API key
 - [ ] Any Firestore/Cloud Storage service account keys (prefer Workload Identity over key files entirely, if feasible in the timeline)
 
 ## 4. Distributed Rate Limiting
@@ -51,13 +50,13 @@ Phase 1's in-process rate limiter was explicitly flagged as temporary (see `PHAS
 
 Each Cloud Run service gets its own least-privilege service account:
 - **API Gateway service account:** Cloud SQL client, Firestore client, Secret Manager accessor (its own secrets only) — **no** direct Cloud Storage or Pub/Sub publish rights beyond what the Project Service needs.
-- **Agent Orchestrator/worker service account:** Pub/Sub publish+subscribe, Cloud Storage read/write (scoped to the `projects/` prefix), Secret Manager accessor for Gemini/Replit keys — **no** direct Cloud SQL access (goes through MCP → the API's data layer, per the boundary established in Phase 2).
+- **Agent Orchestrator/worker service account:** Pub/Sub publish+subscribe, Cloud Storage read/write (scoped to the `projects/` prefix), Secret Manager accessor for the Gemini key — **no** direct Cloud SQL access (goes through MCP → the API's data layer, per the boundary established in Phase 2).
 
 Document this in `infra/terraform/iam.tf` with a comment per binding explaining *why* that service needs that permission — a security reviewer (or a judge reading your repo) should be able to audit this without guessing.
 
 ## 6. Terraform
 
-`infra/terraform/` provisions: Cloud Run services (API, web, agent workers), Cloud SQL instance, Firestore database, Pub/Sub topics/subscriptions, Cloud Storage buckets, Secret Manager secrets (values injected via CI secrets, never committed), Artifact Registry repository, IAM bindings from section 5. Structure as `main.tf`, `variables.tf`, `outputs.tf`, with separate `.tfvars` per environment (`dev.tfvars`, `staging.tfvars`, `prod.tfvars`). A fresh `terraform apply` against an empty GCP project should stand up the entire system with no manual console steps.
+`infra/terraform/` provisions: Cloud Run services (API, web, agent workers), Cloud SQL instance, Firestore database, Pub/Sub topics/subscriptions, Cloud Storage buckets, Secret Manager secrets (values injected via CI secrets, never committed), Artifact Registry repository, IAM bindings from section 5. Structure as `main.tf`, `variables.tf`, `outputs.tf`, with separate `.tfvars` per environment (`dev.tfvars`, `staging.tfvars`, `prod.tfvars`). A fresh `terraform apply` against an empty GCP project should stand up the entire system with no manual console steps. This is the GCP production architecture — separate from, and in addition to, the Replit hosting requirement handled in `PHASE-04-APP-BUILD-AND-CRITIC.md` §5a (Replit's Guided Import + Deployments has no Terraform provider; that leg stays a one-time manual setup, kept in sync via the `repl.deploy` GitHub Action).
 
 ## 7. CI/CD — Staging & Production
 

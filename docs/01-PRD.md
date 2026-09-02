@@ -16,7 +16,7 @@ Give any production, regardless of budget, a multi-agent system that reads a scr
 
 - Ingest a script (PDF, plain text, or Fountain-style format) and produce a structured scene/shot breakdown.
 - Generate storyboard-quality concept frames per shot via Imagen, visually consistent across a project.
-- Autonomously generate and deploy a working, navigable previs web app via Replit's Agent API.
+- Autonomously generate a working, navigable previs web app from the project's own breakdown + frames, verified by a Critic Agent before it's shown as done — hosted on Replit per the partner track's requirement (see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0).
 - Support iteration: a director can request changes in natural language and see the app rebuild.
 - Demonstrate genuine multi-agent orchestration — visible agent reasoning, not a single hidden LLM call wearing a UI.
 - Be secure, observable, and deployable to a standard a Google Cloud judge accepts as "production-track."
@@ -26,7 +26,7 @@ Give any production, regardless of budget, a multi-agent system that reads a scr
 - **Not** a full VFX/animation pipeline — no 3D rendering, no motion capture.
 - **Not** a script-writing tool — SceneCraft consumes scripts, it doesn't generate them.
 - **Not** attempting final-shot-accurate camera lensing or physical simulation — this is rapid previs, not virtual production.
-- **Not** building a custom low-code app builder — that capability is deliberately delegated to Replit's agent.
+- **Not** an unconstrained code-generation platform — the App-Build Agent fills in a fixed, pre-tested app shell rather than writing arbitrary source per project; see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §1 for why.
 
 ## 5. User Personas
 
@@ -57,7 +57,7 @@ Give any production, regardless of budget, a multi-agent system that reads a scr
 | Previs software | ShotPro, FrameForge | Desktop-only, steep learning curve, output isn't a shareable web artifact, no AI script understanding |
 | Script breakdown tools | Scenechronize, StudioBinder | Structured breakdown only — stops at spreadsheets, never produces a visual, interactive artifact |
 
-**The gap:** nothing in this space closes the loop from *raw script text* to a *deployed, interactive, navigable app* autonomously. That full-loop autonomy — an agent that actually writes and ships working software — is the white space SceneCraft occupies, and it's why the Replit partner track is a structural fit rather than an arbitrary choice.
+**The gap:** nothing in this space closes the loop from *raw script text* to a *deployed, interactive, navigable app* autonomously. That full-loop autonomy — an agent that actually writes and ships working software, hosted on Replit's platform per the partner track's requirement — is the white space SceneCraft occupies.
 
 ## 7. Feature Prioritization (MoSCoW)
 
@@ -89,7 +89,7 @@ Give any production, regardless of budget, a multi-agent system that reads a scr
 | FR1 | System shall accept script uploads in PDF and plain text, up to 50 pages |
 | FR2 | System shall parse scripts into scenes, shots, characters, locations, and time-of-day metadata |
 | FR3 | System shall generate one Imagen storyboard frame per identified shot, styled per a selectable visual tone |
-| FR4 | System shall invoke Replit's Agent API to scaffold, generate, and deploy a Next.js previs web app from the current project data |
+| FR4 | System shall generate a Next.js previs web app's content from the current project data (deterministic data layer + bounded, schema-validated styling generation) and have the Critic Agent verify it before marking the job complete |
 | FR5 | System shall accept natural-language edit requests, translate them into structured change-sets, and trigger redeployment |
 | FR6 | System shall expose an agent activity log showing each agent's step, tool call, and reasoning summary |
 | FR7 | System shall persist project state (script, breakdown, frames, deployed app URL) per user workspace |
@@ -115,7 +115,7 @@ Give any production, regardless of budget, a multi-agent system that reads a scr
 
 | Risk | Mitigation |
 |---|---|
-| Replit agent generation is nondeterministic/slow under demo pressure | Pre-warm a cached "golden path" script for the demo; keep a fallback pre-generated deployment |
+| Replit deployment (hosting + the one-time Replit-Agent-built app shell, per `PHASE-04-APP-BUILD-AND-CRITIC.md` §5) is a manual, non-API step | Do it early, well before the demo, and keep the Reserved VM deployment always-on rather than treating it as a last-minute task |
 | Imagen output style drifts across a script | Lock a style-reference prompt template per project, reused across every shot generation |
 | Script parsing fails on non-standard formats | Support a strict Fountain/FDX-like format as the primary path; PDF as best-effort with a manual-correction UI |
 | Scope creep from the full feature wishlist | The Must-have list above is the hackathon submission scope; Should/Could are explicitly post-hackathon |
@@ -125,7 +125,7 @@ Give any production, regardless of budget, a multi-agent system that reads a scr
 - Scripts are unpublished IP — encrypted at rest (Cloud Storage default, CMEK optional) and in transit (TLS everywhere).
 - No script content is used to train or fine-tune any model; Gemini calls use data-retention-minimizing settings.
 - Per-project access control via a Firestore-backed RBAC model; JWT-based session auth.
-- Secret Manager for every third-party key (Replit, Gemini) — never committed, never in plain env files in the repo.
+- Secret Manager for every third-party key (Gemini, database credentials) — never committed, never in plain env files in the repo. Replit needs no API key from SceneCraft (see `PHASE-04-APP-BUILD-AND-CRITIC.md` §5) — it's a hosting target and a one-time dev-process step, not a runtime credential.
 
 ## 13. Accessibility
 
