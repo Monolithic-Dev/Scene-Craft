@@ -9,16 +9,22 @@ def _mock_settings(project: str = "test-project"):
     settings = MagicMock()
     settings.google_cloud_project = project
     settings.google_cloud_location = "us-central1"
-    settings.imagen_model = "imagen-4.0-generate-001"
+    settings.imagen_model = "gemini-2.5-flash-image"
     return settings
 
 
+def _mock_response_with_image(image_bytes: bytes | None) -> MagicMock:
+    part = MagicMock()
+    part.inline_data = MagicMock(data=image_bytes) if image_bytes is not None else None
+    content = MagicMock(parts=[part])
+    candidate = MagicMock(content=content)
+    return MagicMock(candidates=[candidate])
+
+
 def test_generate_image_returns_bytes_on_success():
-    mock_image = MagicMock(image_bytes=b"fake-png-bytes")
-    mock_generated = MagicMock(image=mock_image)
-    mock_response = MagicMock(generated_images=[mock_generated])
+    mock_response = _mock_response_with_image(b"fake-png-bytes")
     mock_client = MagicMock()
-    mock_client.models.generate_images.return_value = mock_response
+    mock_client.models.generate_content.return_value = mock_response
 
     with (
         patch("shared.imagen_client.get_settings", return_value=_mock_settings()),
@@ -38,10 +44,10 @@ def test_generate_image_raises_when_not_configured():
             generate_image("a storyboard prompt")
 
 
-def test_generate_image_raises_when_no_images_returned():
-    mock_response = MagicMock(generated_images=[])
+def test_generate_image_raises_when_no_candidates():
+    mock_response = MagicMock(candidates=[])
     mock_client = MagicMock()
-    mock_client.models.generate_images.return_value = mock_response
+    mock_client.models.generate_content.return_value = mock_response
 
     with (
         patch("shared.imagen_client.get_settings", return_value=_mock_settings()),
@@ -51,12 +57,13 @@ def test_generate_image_raises_when_no_images_returned():
             generate_image("a storyboard prompt")
 
 
-def test_generate_image_raises_when_image_has_no_bytes():
-    mock_image = MagicMock(image_bytes=None)
-    mock_generated = MagicMock(image=mock_image)
-    mock_response = MagicMock(generated_images=[mock_generated])
+def test_generate_image_raises_when_no_inline_data_in_any_part():
+    text_only_part = MagicMock(inline_data=None)
+    content = MagicMock(parts=[text_only_part])
+    candidate = MagicMock(content=content)
+    mock_response = MagicMock(candidates=[candidate])
     mock_client = MagicMock()
-    mock_client.models.generate_images.return_value = mock_response
+    mock_client.models.generate_content.return_value = mock_response
 
     with (
         patch("shared.imagen_client.get_settings", return_value=_mock_settings()),
@@ -64,3 +71,20 @@ def test_generate_image_raises_when_image_has_no_bytes():
     ):
         with pytest.raises(ImagenClientError):
             generate_image("a storyboard prompt")
+
+
+def test_generate_image_skips_empty_content_and_finds_image_in_later_candidate():
+    empty_candidate = MagicMock(content=None)
+    part = MagicMock(inline_data=MagicMock(data=b"fake-png-bytes"))
+    good_candidate = MagicMock(content=MagicMock(parts=[part]))
+    mock_response = MagicMock(candidates=[empty_candidate, good_candidate])
+    mock_client = MagicMock()
+    mock_client.models.generate_content.return_value = mock_response
+
+    with (
+        patch("shared.imagen_client.get_settings", return_value=_mock_settings()),
+        patch("shared.imagen_client.genai.Client", return_value=mock_client),
+    ):
+        result = generate_image("a storyboard prompt")
+
+    assert result == b"fake-png-bytes"

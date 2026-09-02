@@ -20,17 +20,18 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
 
-    # Vertex AI — Imagen generation only. A separate client/mode from the
-    # Developer API client above: generate_images() is only available in
-    # Vertex AI mode (vertexai=True, project, location), it 404s/errors
-    # under a plain Developer API key even on a paid Gemini plan — see
-    # PHASE-03-FRAME-GENERATION.md and shared/imagen_client.py. Empty by
-    # default: a project without Vertex AI configured just can't generate
-    # frames yet, same "stays honestly unconfigured" pattern as
-    # mcp_server_python_executable below.
+    # Vertex AI — frame image generation only. A separate client/mode from
+    # the Developer API client above: image generation needs Vertex AI mode
+    # (vertexai=True, project, location) since the Developer API's free tier
+    # has 0 quota for it — see PHASE-03-FRAME-GENERATION.md and
+    # shared/imagen_client.py for why this uses gemini-2.5-flash-image via
+    # generate_content rather than the dedicated (deprecated) Imagen
+    # generate_images() API. Empty by default: a project without Vertex AI
+    # configured just can't generate frames yet, same "stays honestly
+    # unconfigured" pattern as mcp_server_python_executable below.
     google_cloud_project: str = ""
     google_cloud_location: str = "us-central1"
-    imagen_model: str = "imagen-4.0-generate-001"
+    imagen_model: str = "gemini-2.5-flash-image"
 
     # Local-dev stand-in for Cloud Storage (10-DIAGRAMS.md SS9 — frames are
     # meant to live in Cloud Storage in production). Phase 6 swaps this for

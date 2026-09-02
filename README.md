@@ -8,13 +8,13 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 
 ## Status
 
-**Phase 3 (Storyboard Frame Generation) is implemented and passing its full test suite.** Live end-to-end verification against real Imagen output is pending a Vertex AI-enabled GCP project (see `docs/Phases/PHASE-03-FRAME-GENERATION.md`) — the Gemini Developer API key used for text generation does not have Imagen access.
+**Phase 3 (Storyboard Frame Generation) is complete and verified live end to end** — real script upload, real breakdown, real generated frames (via `gemini-2.5-flash-image` on Vertex AI, not the dedicated Imagen API — see `docs/Phases/PHASE-03-FRAME-GENERATION.md`), real captioning, all persisted through the actual API. Known operational constraint worth flagging before any live demo: the `GEMINI_API_KEY`'s free tier caps `gemini-2.5-flash` at 5 requests/minute, and breakdown plus concurrent per-shot captioning can burn through that fast on anything but a small script.
 
 | Phase | Status |
 |---|---|
 | 1 — Foundations | ✅ Done |
 | 2 — Script Breakdown Agent | ✅ Done |
-| 3 — Storyboard Frame Generation | ⚠️ Built + tested; live Imagen verification pending Vertex AI setup |
+| 3 — Storyboard Frame Generation | ✅ Done |
 | 4 — App-Build & Critic Agents (Replit) | Not started |
 | 5 — Iteration Loop & Trace UI | Not started |
 | 6 — Observability, Security, Deployment | Not started |
@@ -84,7 +84,7 @@ cp .env.example .env
 # Set MCP_SERVER_PYTHON_EXECUTABLE to mcp_server/.venv's interpreter
 ```
 
-Frame generation (Phase 3) additionally needs a **Vertex AI-enabled GCP project** — Imagen's `generate_images()` call only works in Vertex AI mode, not under a plain Gemini Developer API key:
+Frame generation (Phase 3) additionally needs a **Vertex AI-enabled GCP project** — image generation only works in Vertex AI mode, not under a plain Gemini Developer API key (0 quota on the free tier):
 
 ```bash
 # In agents/.env, once you have a GCP project with billing + the Vertex AI
@@ -94,7 +94,9 @@ GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
-Without this, breakdown still runs fine — frame generation just isn't reachable yet (`ImagenNotConfiguredError`, caught per-shot, never blocks the rest of the pipeline in a way that leaves the job stuck).
+Uses `gemini-2.5-flash-image` rather than the dedicated Imagen `generate_images()` API — the latter stayed inaccessible (404) for a real test project even with billing and the Vertex AI API both enabled, since Model Garden gates generative-media models individually; `gemini-2.5-flash-image` worked immediately. See `docs/Phases/PHASE-03-FRAME-GENERATION.md`'s model note.
+
+Without `GOOGLE_CLOUD_PROJECT` set, breakdown still runs fine — frame generation just isn't reachable yet (`ImagenNotConfiguredError`, caught per-shot, never blocks the rest of the pipeline in a way that leaves the job stuck).
 
 Then point `apps/api/.env` at this venv so uploads actually trigger a run:
 
@@ -133,7 +135,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks — lint, type-check, test,
 
 **Phase 2** — Script upload now creates a `GenerationJob` and (if `agents` is configured) triggers a real breakdown run: the script is chunked on scene boundaries, each chunk sent to Gemini with a schema-constrained prompt, validated, retried once on failure, and persisted via `mcp_server`'s tools. A scene that fails validation twice is flagged `needs_review` and the job still completes — one bad scene never blocks the rest. `GET /api/v1/jobs/{id}` and `GET /api/v1/projects/{id}` expose job status and the resulting breakdown.
 
-**Phase 3** — After breakdown completes, the Coordinator fans out one concurrent worker per shot (`asyncio.gather`, real concurrency via `asyncio.to_thread` around the blocking Imagen/Gemini calls — not a serial loop). Each worker generates an Imagen frame using the project's locked style reference, captions it via Gemini multimodal, and writes the result through a new `write_frame_record` MCP tool. A shot's frame generation and its captioning are independent failure modes: a persistent Imagen failure (3 retries, exponential backoff) inserts a placeholder and flags the shot; a captioning-only failure keeps the real image and just falls back on alt-text. `GET /api/v1/jobs/{id}` now reports live `{"completed", "total", "failed"}` sub-progress for the `frames` step. Frames are written to a local-dev stand-in for Cloud Storage (`agents/.local_storage/`, swapped for real GCS in Phase 6). **Live end-to-end verification against real Imagen output needs a Vertex AI-enabled GCP project — not yet run.**
+**Phase 3** — After breakdown completes, the Coordinator fans out one concurrent worker per shot (`asyncio.gather`, real concurrency via `asyncio.to_thread` around the blocking image-generation/captioning calls — not a serial loop). Each worker generates a frame using the project's locked style reference (via `gemini-2.5-flash-image` on Vertex AI — the dedicated Imagen API stayed inaccessible for this project even with billing and the Vertex AI API enabled, see `docs/Phases/PHASE-03-FRAME-GENERATION.md`), captions it via Gemini multimodal, and writes the result through a new `write_frame_record` MCP tool. A shot's frame generation and its captioning are independent failure modes: a persistent generation failure (3 retries, exponential backoff) inserts a placeholder and flags the shot; a captioning-only failure keeps the real image and just falls back on alt-text. `GET /api/v1/jobs/{id}` reports live `{"completed", "total", "failed"}` sub-progress for the `frames` step. Frames are written to a local-dev stand-in for Cloud Storage (`agents/.local_storage/`, swapped for real GCS in Phase 6). **Verified live end to end** — real script → real breakdown → real generated frames → real captions, all persisted through the actual API, no mocks.
 
 ## License
 
