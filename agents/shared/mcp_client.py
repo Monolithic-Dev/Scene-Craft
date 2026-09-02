@@ -83,8 +83,38 @@ async def write_shot_records(script_id: str, scenes: list[dict[str, Any]]) -> di
 
 
 async def update_job_status(
-    job_id: str, status: str, error_detail: str | None = None
+    job_id: str,
+    status: str,
+    error_detail: str | None = None,
+    *,
+    stage: str | None = None,
+    frames_total: int | None = None,
+    frames_completed: int | None = None,
+    frames_failed: int | None = None,
 ) -> dict[str, Any]:
     return await _call_tool(
-        "update_job_status", {"job_id": job_id, "status": status, "error_detail": error_detail}
+        "update_job_status",
+        {
+            "job_id": job_id,
+            "status": status,
+            "error_detail": error_detail,
+            "stage": stage,
+            "frames_total": frames_total,
+            "frames_completed": frames_completed,
+            "frames_failed": frames_failed,
+        },
+    )
+
+
+async def write_frame_record(
+    shot_id: str, image_url: str, alt_text: str, *, needs_review: bool = False
+) -> dict[str, Any]:
+    return await _call_tool(
+        "write_frame_record",
+        {
+            "shot_id": shot_id,
+            "image_url": image_url,
+            "alt_text": alt_text,
+            "needs_review": needs_review,
+        },
     )

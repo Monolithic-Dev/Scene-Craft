@@ -14,6 +14,7 @@ from shared.mcp_client import (
     McpClientNotConfiguredError,
     get_project_state,
     update_job_status,
+    write_frame_record,
 )
 
 
@@ -55,3 +56,51 @@ async def test_not_configured_raises_before_attempting_to_spawn_anything():
         mock_settings.return_value.mcp_server_python_executable = ""
         with pytest.raises(McpClientNotConfiguredError):
             await get_project_state("p1")
+
+
+async def test_update_job_status_forwards_progress_kwargs_as_tool_arguments():
+    text_block = TextContent(type="text", text='{"job_id": "j1", "status": "running"}')
+    result = MagicMock(isError=False, structuredContent=None, content=[text_block])
+
+    captured_args: dict = {}
+
+    @asynccontextmanager
+    async def _session():
+        session = AsyncMock()
+
+        async def _call_tool(name, arguments):
+            captured_args.update(arguments)
+            return result
+
+        session.call_tool = _call_tool
+        yield session
+
+    with patch("shared.mcp_client._session", _session):
+        await update_job_status(
+            "j1", "running", stage="frames", frames_total=18, frames_completed=12, frames_failed=1
+        )
+
+    assert captured_args == {
+        "job_id": "j1",
+        "status": "running",
+        "error_detail": None,
+        "stage": "frames",
+        "frames_total": 18,
+        "frames_completed": 12,
+        "frames_failed": 1,
+    }
+
+
+async def test_write_frame_record_sends_expected_tool_arguments():
+    text_block = TextContent(
+        type="text",
+        text='{"shot_id": "s1", "frame_id": "f1", "updated_at": "2026-01-01T00:00:00Z"}',
+    )
+    result = MagicMock(isError=False, structuredContent=None, content=[text_block])
+
+    with patch("shared.mcp_client._session", _fake_session(result)):
+        response = await write_frame_record(
+            "s1", "file:///a.png", "Dana waits.", needs_review=True
+        )
+
+    assert response == {"shot_id": "s1", "frame_id": "f1", "updated_at": "2026-01-01T00:00:00Z"}
