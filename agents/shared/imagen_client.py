@@ -1,20 +1,25 @@
-"""Vertex AI Imagen client — deliberately a separate genai.Client instance
-from gemini_client.py's Developer-API-mode client. google-genai's
-generate_images() only works when the client is constructed in Vertex AI
-mode (vertexai=True, project, location); under a plain Developer API key it
-raises before making any network call ("only supported in Gemini Enterprise
-Agent Platform mode"), confirmed empirically against the real SDK while
-building this phase. Text/captioning calls stay on the free-tier-friendly
-Developer API key — only image generation needs a billed GCP project.
+"""Image generation client — uses Gemini's multimodal generate_content (the
+gemini-2.5-flash-image / "Nano Banana" model) rather than the dedicated
+Imagen generate_images() API.
+
+Two reasons, both confirmed empirically while building this phase against a
+real GCP project with billing and the Vertex AI API enabled: (1)
+generate_images() only works in Vertex AI mode, and this project's Imagen
+publisher-model access stayed 404 even with billing/Vertex AI on — Model
+Garden gates each generative-media model individually, separate from the
+API-enablement step; (2) the google-genai SDK itself flags generate_images()
+as deprecated and points at generate_content with image models as the
+replacement. Still runs through the Vertex AI client (vertexai=True), not
+the Developer API key — that's what has billing/quota attached, and the
+Developer API's free tier has a 0 quota for image generation.
 """
 from google import genai
-from google.genai import types
 
 from shared.config import get_settings
 
 
 class ImagenClientError(Exception):
-    """Raised when Imagen returns no usable image (safety filter, empty
+    """Raised when the model returns no usable image (safety filter, empty
     response) or the API call itself fails (quota, transient error) — the
     caller (frame_agent/worker.py) is responsible for retry/backoff.
     """
@@ -38,16 +43,16 @@ def generate_image(prompt: str, *, model: str | None = None) -> bytes:
         project=settings.google_cloud_project,
         location=settings.google_cloud_location,
     )
-    response = client.models.generate_images(
+    response = client.models.generate_content(
         model=model or settings.imagen_model,
-        prompt=prompt,
-        config=types.GenerateImagesConfig(number_of_images=1),
+        contents=prompt,
     )
-    if not response.generated_images:
-        raise ImagenClientError("Imagen returned no images")
 
-    image = response.generated_images[0].image
-    image_bytes = image.image_bytes if image is not None else None
-    if not image_bytes:
-        raise ImagenClientError("Imagen returned an image with no bytes")
-    return bytes(image_bytes)
+    for candidate in response.candidates or []:
+        if candidate.content is None:
+            continue
+        for part in candidate.content.parts or []:
+            if part.inline_data is not None and part.inline_data.data:
+                return bytes(part.inline_data.data)
+
+    raise ImagenClientError("Image model returned no image data")

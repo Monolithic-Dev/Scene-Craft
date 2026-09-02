@@ -34,6 +34,8 @@ agents/frame_agent/
 └── captioning.py         # Gemini multimodal alt-text generation
 ```
 
+**Model note:** implemented against `gemini-2.5-flash-image` ("Nano Banana") via `generate_content`, not the dedicated Imagen `generate_images()` API this section originally specced. Confirmed empirically against a real GCP project with billing and the Vertex AI API enabled: the Imagen publisher models stayed 404 (Model Garden gates generative-media models individually, separate from API enablement), while `gemini-2.5-flash-image` worked immediately with good output quality — and the `google-genai` SDK itself flags `generate_images()` as deprecated in favor of this path. `shared/imagen_client.py` keeps the `Imagen*` naming (it's still the image-generation role in the pipeline) but the model is configurable via `IMAGEN_MODEL` in `agents/.env`.
+
 **Prompt template (`prompts.py`)** — the real prompt, not a summary:
 ```
 Generate a storyboard-style concept frame for the following shot.
