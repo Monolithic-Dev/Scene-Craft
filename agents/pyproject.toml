@@ -23,7 +23,19 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["orchestrator*", "breakdown_agent*", "shared*"]
+# frame_agent was missing here even though Phase 3 shipped it — editable
+# installs (pip install -e .) don't enforce this filter, so it worked
+# locally by accident; a real non-editable build (the Cloud Run Docker
+# image) would have silently shipped without it. Caught while adding
+# Phase 4's packages.
+include = [
+    "orchestrator*",
+    "breakdown_agent*",
+    "frame_agent*",
+    "app_build_agent*",
+    "critic_agent*",
+    "shared*",
+]
 
 [tool.ruff]
 line-length = 100

@@ -4,17 +4,16 @@ from pydantic import BaseModel
 
 from src.models.generation_job import GenerationJob, JobStatus
 
-# The initial_generation plan is [breakdown, frames] as of Phase 3 (04-AGENT-
-# ARCHITECTURE.md SS1) — app_build/critic arrive in Phase 4. "steps" is
-# derived from the job's own status/current_stage/frames_* columns rather
-# than a separate step-tracking table; Phase 5 replaces this with real
-# per-agent step events streamed through Firestore — see
-# PHASE-05-ITERATION-AND-TRACE-UI.md.
+# The initial_generation plan is [breakdown, frames, app_build, critic] as of
+# Phase 4 (04-AGENT-ARCHITECTURE.md SS1). "steps" is derived from the job's
+# own status/current_stage/frames_* columns rather than a separate
+# step-tracking table; Phase 5 replaces this with real per-agent step events
+# streamed through Firestore — see PHASE-05-ITERATION-AND-TRACE-UI.md.
 _TERMINAL_STEP_STATUS_BY_JOB_STATUS: dict[JobStatus, str] = {
     JobStatus.COMPLETE: "complete",
     JobStatus.FAILED_NEEDS_REVIEW: "failed",
 }
-_STAGE_ORDER = ("breakdown", "frames")
+_STAGE_ORDER = ("breakdown", "frames", "app_build", "critic")
 
 
 class JobStep(BaseModel):

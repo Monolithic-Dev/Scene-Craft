@@ -17,11 +17,13 @@ from src.api_client import (
     get_project_state,
     update_job_status,
     write_frame_record,
+    write_previs_customization,
     write_shot_records,
 )
 from src.schemas import (
     FrameWriteResult,
     JobStatusUpdate,
+    PrevisCustomizationWriteResult,
     ProjectStateSnapshot,
     SceneInput,
     WriteResult,
@@ -63,6 +65,7 @@ def update_job_status_tool(
     frames_total: int | None = None,
     frames_completed: int | None = None,
     frames_failed: int | None = None,
+    deployed_app_url: str | None = None,
 ) -> JobStatusUpdate:
     """The channel agents use to move a GenerationJob through
     queued -> running -> complete|failed_needs_review — see
@@ -72,8 +75,10 @@ def update_job_status_tool(
     stage transition.
 
     stage/frames_* (added in Phase 3) let the Frame Agent's fan-out report
-    real sub-progress mid-stage — see PHASE-03-FRAME-GENERATION.md SS6. Any
-    argument left as None carries no change; it is not the same as 0/unset.
+    real sub-progress mid-stage — see PHASE-03-FRAME-GENERATION.md SS6.
+    deployed_app_url (added in Phase 4) is set once by the App-Build Agent —
+    see PHASE-04-APP-BUILD-AND-CRITIC.md SS3. Any argument left as None
+    carries no change; it is not the same as 0/unset.
     """
     try:
         return update_job_status(
@@ -84,6 +89,7 @@ def update_job_status_tool(
             frames_total=frames_total,
             frames_completed=frames_completed,
             frames_failed=frames_failed,
+            deployed_app_url=deployed_app_url,
         )
     except ApiClientError as exc:
         raise ValueError(str(exc)) from exc
@@ -99,6 +105,20 @@ def write_frame_record_tool(
     """
     try:
         return write_frame_record(shot_id, image_url, alt_text, needs_review=needs_review)
+    except ApiClientError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool(name="write_previs_customization")
+def write_previs_customization_tool(
+    project_id: str, title: str, accent_color: str, tone_note: str
+) -> PrevisCustomizationWriteResult:
+    """Persists the App-Build Agent's one LLM-authored artifact — a small,
+    schema-validated styling/copy layer, not app code or content data. See
+    PHASE-04-APP-BUILD-AND-CRITIC.md SS3.
+    """
+    try:
+        return write_previs_customization(project_id, title, accent_color, tone_note)
     except ApiClientError as exc:
         raise ValueError(str(exc)) from exc
 

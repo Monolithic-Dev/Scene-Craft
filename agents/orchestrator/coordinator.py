@@ -1,5 +1,5 @@
 """Entry point for every job. For initial_generation, the plan is
-[breakdown, frames] as of Phase 3 — app_build/critic arrive in Phase 4, per
+[breakdown, frames, app_build, critic] as of Phase 4, per
 04-AGENT-ARCHITECTURE.md SS1.
 
 Invoked as: python -m orchestrator.coordinator <job_id> <project_id>
@@ -10,7 +10,9 @@ import asyncio
 import logging
 import sys
 
+from app_build_agent.agent import run as run_app_build
 from breakdown_agent.agent import run as run_breakdown
+from critic_agent.agent import run as run_critic
 from frame_agent.agent import run as run_frames
 from shared.mcp_client import McpClientError, update_job_status
 
@@ -100,7 +102,53 @@ async def run_initial_generation(job_id: str, project_id: str) -> None:
     except McpClientError:
         logger.warning("coordinator.final_progress_report_failed", extra={"job_id": job_id})
 
-    await update_job_status(job_id, "complete")
+    try:
+        await update_job_status(job_id, "running", stage="app_build")
+        app_build_result = await run_app_build(project_id)
+    except Exception as exc:
+        logger.exception("coordinator.app_build_failed", extra={"job_id": job_id})
+        await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
+        return
+
+    try:
+        await update_job_status(
+            job_id,
+            "running",
+            stage="critic",
+            deployed_app_url=app_build_result.deployed_app_url,
+        )
+        verdict = await run_critic(project_id)
+    except Exception as exc:
+        logger.exception("coordinator.critic_failed", extra={"job_id": job_id})
+        await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
+        return
+
+    if not verdict.passed:
+        # Exactly one bounded retry through app_build, per PHASE-04-APP-
+        # BUILD-AND-CRITIC.md SS4 — never an unbounded loop between the two.
+        logger.warning(
+            "coordinator.critic_verdict_failed_retrying",
+            extra={"job_id": job_id, "notes": verdict.notes},
+        )
+        try:
+            app_build_result = await run_app_build(project_id)
+            verdict = await run_critic(project_id)
+        except Exception as exc:
+            logger.exception("coordinator.app_build_retry_failed", extra={"job_id": job_id})
+            await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
+            return
+
+        if not verdict.passed:
+            logger.warning(
+                "coordinator.critic_verdict_failed_after_retry",
+                extra={"job_id": job_id, "notes": verdict.notes},
+            )
+            await update_job_status(job_id, "failed_needs_review", error_detail=verdict.notes)
+            return
+
+    await update_job_status(
+        job_id, "complete", deployed_app_url=app_build_result.deployed_app_url
+    )
 
 
 def main() -> None:

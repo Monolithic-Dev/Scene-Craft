@@ -12,6 +12,7 @@ from src.api_client import (
     get_project_state,
     update_job_status,
     write_frame_record,
+    write_previs_customization,
     write_shot_records,
 )
 from src.schemas import SceneInput, ShotInput
@@ -40,6 +41,7 @@ def test_get_project_state_sends_the_internal_key_header():
             200,
             json={
                 "project_id": "p1",
+                "title": "Midnight Ferry",
                 "script_id": "s1",
                 "script_text": "text",
                 "style_reference": None,
@@ -140,3 +142,43 @@ def test_write_frame_record_raises_on_failure():
     with _patched_client(httpx.MockTransport(handler)):
         with pytest.raises(ApiClientError, match="no such shot"):
             write_frame_record("does-not-exist", "file:///a.png", "x")
+
+
+def test_write_previs_customization_posts_the_correct_body():
+    seen_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "project_id": "proj-1",
+                "title": "Midnight Ferry",
+                "accent_color": "#ff6a00",
+                "tone_note": "Tense, nocturnal",
+            },
+        )
+
+    with _patched_client(httpx.MockTransport(handler)):
+        result = write_previs_customization(
+            "proj-1", "Midnight Ferry", "#ff6a00", "Tense, nocturnal"
+        )
+
+    assert result.title == "Midnight Ferry"
+    assert seen_requests[0].url.path == "/internal/v1/projects/proj-1/previs-customization"
+    body = json.loads(seen_requests[0].content)
+    assert body == {
+        "title": "Midnight Ferry",
+        "accent_color": "#ff6a00",
+        "tone_note": "Tense, nocturnal",
+    }
+
+
+def test_write_previs_customization_raises_on_failure():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": "NOT_FOUND", "message": "no such project"}}
+        return httpx.Response(404, json=body)
+
+    with _patched_client(httpx.MockTransport(handler)):
+        with pytest.raises(ApiClientError, match="no such project"):
+            write_previs_customization("does-not-exist", "X", "#000000", "Y")
