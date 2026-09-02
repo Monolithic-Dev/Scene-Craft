@@ -3,12 +3,19 @@
 Uses the `bcrypt` library directly rather than passlib's bcrypt wrapper —
 passlib's version-detection shim is unmaintained and breaks against modern
 bcrypt releases, so we avoid that indirection entirely in production code.
+
+Uses PyJWT rather than python-jose: python-jose pulls in `ecdsa`, which has
+an advisory (PYSEC-2026-1325) with no fix version available — unreachable
+here since we only ever sign with HS256, but it fails `pip-audit`
+unconditionally regardless. PyJWT covers HS256 with no vulnerable
+transitive dependency.
 """
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from src.core.config import get_settings
 
@@ -45,7 +52,7 @@ def decode_access_token(token: str) -> str:
     """Returns the subject (user id) encoded in a valid token, or raises TokenError."""
     try:
         payload = jwt.decode(token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm])
-    except JWTError as exc:
+    except PyJWTError as exc:
         raise TokenError("Invalid or expired token") from exc
 
     subject = payload.get("sub")
