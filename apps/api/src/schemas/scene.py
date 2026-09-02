@@ -1,4 +1,15 @@
+from datetime import datetime
+
 from pydantic import BaseModel
+
+
+class ShotFrameResponse(BaseModel):
+    id: str
+    image_url: str
+    alt_text: str
+    generated_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class ShotResponse(BaseModel):
@@ -10,6 +21,8 @@ class ShotResponse(BaseModel):
     action_summary: str
     suggested_camera: str
     dialogue_snippet: str | None
+    needs_review: bool
+    frame: ShotFrameResponse | None
 
     model_config = {"from_attributes": True}
 
