@@ -8,10 +8,19 @@ updates:
     directory: "/mcp_server"
     schedule:
       interval: "weekly"
+    ignore:
+      # mcp 2.0 renamed FastMCP -> MCPServer and changed the tool API — see
+      # the version pin's comment in mcp_server/pyproject.toml. Don't let
+      # Dependabot propose widening past it.
+      - dependency-name: "mcp"
+        versions: [">=2.0.0"]
   - package-ecosystem: "pip"
     directory: "/agents"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "mcp"
+        versions: [">=2.0.0"]
   - package-ecosystem: "npm"
     directory: "/apps/web"
     schedule:
