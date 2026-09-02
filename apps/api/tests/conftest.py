@@ -1,3 +1,5 @@
+from unittest.mock import patch
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -6,6 +8,22 @@ from sqlalchemy.pool import StaticPool
 
 from src.core.database import Base, get_db
 from src.main import _request_log, app
+
+
+@pytest.fixture(autouse=True)
+def _never_spawn_real_agent_processes():
+    """POST /projects/{id}/scripts schedules trigger_initial_generation_job
+    as a real BackgroundTask, which TestClient executes for real after each
+    response — without this, whether a test suite run actually spawns an OS
+    subprocess (and what it does) depends on whatever AGENTS_PYTHON_EXECUTABLE
+    happens to resolve to in the developer's own .env, which is exactly the
+    kind of environment-dependent behavior a test suite must not have.
+    trigger_initial_generation_job's own unit tests (test_agent_runner.py)
+    import it directly from src.core.agent_runner and are unaffected by this
+    patch, which only touches the reference api/v1/scripts.py holds.
+    """
+    with patch("src.api.v1.scripts.trigger_initial_generation_job", return_value=False):
+        yield
 
 
 @pytest.fixture()
