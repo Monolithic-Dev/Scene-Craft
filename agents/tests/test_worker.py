@@ -11,7 +11,7 @@ from frame_agent.worker import (
     generate_frame_for_shot,
 )
 from shared.gemini_client import GeminiClientError
-from shared.imagen_client import ImagenClientError
+from shared.imagen_client import ImagenClientError, ImagenNotConfiguredError
 
 _SHOT = ShotState(
     shot_id="shot-1",
@@ -57,6 +57,26 @@ async def test_persistent_imagen_failure_inserts_placeholder():
     mock_write.assert_called_once_with(
         "shot-1", result.image_url, _PLACEHOLDER_ALT_TEXT, needs_review=True
     )
+
+
+async def test_not_configured_fails_fast_without_retrying():
+    """ImagenNotConfiguredError is a config error, not a transient one —
+    retrying it wastes ~3s of backoff per shot for no possible benefit.
+    """
+    with (
+        patch(
+            "frame_agent.worker.generate_image",
+            side_effect=ImagenNotConfiguredError("google_cloud_project is not set"),
+        ) as mock_generate,
+        patch("frame_agent.worker.write_frame_record", new_callable=AsyncMock),
+        patch("frame_agent.worker.asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
+    ):
+        result = await generate_frame_for_shot("proj-1", _SHOT, "neo-noir")
+
+    assert mock_generate.call_count == 1
+    mock_sleep.assert_not_called()
+    assert result.succeeded is False
+    assert result.alt_text == _PLACEHOLDER_ALT_TEXT
 
 
 async def test_retry_backoff_is_exponential_and_bounded():

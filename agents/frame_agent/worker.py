@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from frame_agent.captioning import generate_alt_text
 from frame_agent.prompts import build_frame_prompt
 from shared.gemini_client import GeminiClientError
-from shared.imagen_client import ImagenClientError, generate_image
+from shared.imagen_client import ImagenClientError, ImagenNotConfiguredError, generate_image
 from shared.mcp_client import write_frame_record
 from shared.storage import store_frame
 
@@ -68,6 +68,12 @@ async def _generate_image_with_retry(prompt: str, *, sleep: SleepFn) -> bytes | 
             # fan-out in agent.py genuinely concurrent instead of serializing
             # every shot on the single event loop thread.
             return await asyncio.to_thread(generate_image, prompt)
+        except ImagenNotConfiguredError as exc:
+            # A config error, not a transient one — retrying can't help, so
+            # fail straight to the placeholder path instead of burning three
+            # attempts' worth of backoff on every shot for no benefit.
+            logger.warning("frame_agent.imagen_not_configured", extra={"error": str(exc)})
+            return None
         except ImagenClientError as exc:
             logger.warning(
                 "frame_agent.imagen_attempt_failed", extra={"attempt": attempt, "error": str(exc)}

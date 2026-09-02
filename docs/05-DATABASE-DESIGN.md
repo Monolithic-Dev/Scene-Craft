@@ -68,6 +68,7 @@ users ──< projects ──< scripts ──< scenes ──< shots ──< shot
 | action_summary | text | |
 | suggested_camera | varchar(255) | |
 | dialogue_snippet | text, nullable | added in Phase 2 — matches `ShotOutput.dialogue_snippet` from `04-AGENT-ARCHITECTURE.md` §2, omitted from the original table draft |
+| needs_review | boolean, default false | added in Phase 3 — set by the Frame Agent when a shot's frame generation exhausts its retries (placeholder frame inserted) or its captioning call fails (fallback alt-text used); reuses `scenes.needs_review`'s existing convention rather than adding a second, frame-specific flag — see `PHASE-03-FRAME-GENERATION.md` §5 |
 
 ### `shot_frames`
 | Column | Type | Notes |
@@ -97,6 +98,8 @@ users ──< projects ──< scripts ──< scenes ──< shots ──< shot
 | status | enum | `queued` \| `running` \| `complete` \| `failed_needs_review` |
 | deployed_app_url | text | nullable until App-Build Agent succeeds |
 | error_detail | text | nullable |
+| current_stage | varchar(50), nullable | added in Phase 3 — which stage of the plan (`breakdown` \| `frames`) is active; lets `GET /jobs/{id}` derive per-stage step status without a separate step-tracking table (Phase 5 replaces this with real Firestore-backed step events) |
+| frames_total / frames_completed / frames_failed | integer, nullable | added in Phase 3 — sub-progress for the `frames` stage's fan-out, reported by the Frame Agent as shots complete; see `PHASE-03-FRAME-GENERATION.md` §6 |
 | created_at / completed_at | timestamptz | |
 
 ## 4. Indexes
