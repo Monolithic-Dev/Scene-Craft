@@ -17,6 +17,12 @@ class ShotInput(BaseModel):
     dialogue_snippet: str | None = None
 
 
+class FrameWriteResult(BaseModel):
+    shot_id: str
+    frame_id: str
+    updated_at: datetime
+
+
 class SceneInput(BaseModel):
     scene_number: int
     heading: str
@@ -31,6 +37,7 @@ class WriteResult(BaseModel):
 
 
 class ExistingShot(BaseModel):
+    id: str
     shot_number: int
     characters: list[str]
     location: str
@@ -38,6 +45,7 @@ class ExistingShot(BaseModel):
     action_summary: str
     suggested_camera: str
     dialogue_snippet: str | None
+    needs_review: bool
 
 
 class ExistingScene(BaseModel):

@@ -12,8 +12,20 @@ these functions straight, without spinning up a stdio transport.
 """
 from mcp.server.fastmcp import FastMCP
 
-from src.api_client import ApiClientError, get_project_state, update_job_status, write_shot_records
-from src.schemas import JobStatusUpdate, ProjectStateSnapshot, SceneInput, WriteResult
+from src.api_client import (
+    ApiClientError,
+    get_project_state,
+    update_job_status,
+    write_frame_record,
+    write_shot_records,
+)
+from src.schemas import (
+    FrameWriteResult,
+    JobStatusUpdate,
+    ProjectStateSnapshot,
+    SceneInput,
+    WriteResult,
+)
 
 mcp = FastMCP(name="scenecraft-mcp-server")
 
@@ -44,7 +56,13 @@ def write_shot_records_tool(script_id: str, scenes: list[SceneInput]) -> WriteRe
 
 @mcp.tool(name="update_job_status")
 def update_job_status_tool(
-    job_id: str, status: str, error_detail: str | None = None
+    job_id: str,
+    status: str,
+    error_detail: str | None = None,
+    stage: str | None = None,
+    frames_total: int | None = None,
+    frames_completed: int | None = None,
+    frames_failed: int | None = None,
 ) -> JobStatusUpdate:
     """The channel agents use to move a GenerationJob through
     queued -> running -> complete|failed_needs_review — see
@@ -52,9 +70,35 @@ def update_job_status_tool(
     tools originally scoped for Phase 2, added because agents have no other
     path to touch job state and the spec requires status updates at every
     stage transition.
+
+    stage/frames_* (added in Phase 3) let the Frame Agent's fan-out report
+    real sub-progress mid-stage — see PHASE-03-FRAME-GENERATION.md SS6. Any
+    argument left as None carries no change; it is not the same as 0/unset.
     """
     try:
-        return update_job_status(job_id, status, error_detail)
+        return update_job_status(
+            job_id,
+            status,
+            error_detail,
+            stage=stage,
+            frames_total=frames_total,
+            frames_completed=frames_completed,
+            frames_failed=frames_failed,
+        )
+    except ApiClientError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool(name="write_frame_record")
+def write_frame_record_tool(
+    shot_id: str, image_url: str, alt_text: str, needs_review: bool = False
+) -> FrameWriteResult:
+    """Persists one Frame Agent worker's result — a generated frame or a
+    placeholder on persistent failure. See PHASE-03-FRAME-GENERATION.md SS3
+    point 3 and SS5 for the placeholder/needs_review contract.
+    """
+    try:
+        return write_frame_record(shot_id, image_url, alt_text, needs_review=needs_review)
     except ApiClientError as exc:
         raise ValueError(str(exc)) from exc
 
