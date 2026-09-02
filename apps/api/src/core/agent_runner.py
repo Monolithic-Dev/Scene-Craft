@@ -36,7 +36,7 @@ def _resolve_python_executable(configured: str) -> str | None:
     return which(configured)
 
 
-def trigger_breakdown_job(
+def trigger_initial_generation_job(
     job_id: str,
     project_id: str,
     *,

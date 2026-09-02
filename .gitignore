@@ -22,6 +22,7 @@ env/
 htmlcov/
 *.db
 *.sqlite3
+.local_storage/
 
 # --- Node / Next.js ------------------------------------------------------------
 node_modules/

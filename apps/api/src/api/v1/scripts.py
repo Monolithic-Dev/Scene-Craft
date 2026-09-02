@@ -5,7 +5,7 @@ from pypdf import PdfReader
 from pypdf.errors import PdfReadError
 
 from src.api.deps import CurrentUser, DbSession
-from src.core.agent_runner import trigger_breakdown_job
+from src.core.agent_runner import trigger_initial_generation_job
 from src.core.exceptions import ValidationError
 from src.models.generation_job import JobType
 from src.schemas.script import ScriptResponse
@@ -57,7 +57,7 @@ async def upload_script(
     )
 
     job = JobService(db).create_job(project_id=project_id, job_type=JobType.INITIAL_GENERATION)
-    background_tasks.add_task(trigger_breakdown_job, job.id, project_id)
+    background_tasks.add_task(trigger_initial_generation_job, job.id, project_id)
 
     response = ScriptResponse.model_validate(script)
     response.job_id = job.id

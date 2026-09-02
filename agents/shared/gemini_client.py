@@ -34,3 +34,22 @@ def generate_json(
     if not response.text:
         raise GeminiClientError("Gemini returned an empty response")
     return response.text
+
+
+def caption_image(
+    image_bytes: bytes, mime_type: str, prompt: str, *, model: str | None = None
+) -> str:
+    """Multimodal call for frame_agent/captioning.py — plain text output, not
+    JSON, so it stays on generate_content's default text response rather
+    than generate_json's schema-constrained config. Same Developer API
+    client as generate_json (captioning doesn't need Vertex AI/Imagen).
+    """
+    settings = get_settings()
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = client.models.generate_content(
+        model=model or settings.gemini_model,
+        contents=[types.Part.from_bytes(data=image_bytes, mime_type=mime_type), prompt],
+    )
+    if not response.text:
+        raise GeminiClientError("Gemini returned an empty caption")
+    return response.text.strip()

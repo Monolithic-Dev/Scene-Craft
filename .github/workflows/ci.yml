@@ -121,7 +121,7 @@ jobs:
         run: ruff check .
 
       - name: Type-check (mypy --strict)
-        run: mypy --strict orchestrator breakdown_agent shared
+        run: mypy --strict orchestrator breakdown_agent frame_agent shared
 
       - name: Test (pytest)
         run: pytest -v

@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 from mcp.server.fastmcp.exceptions import ToolError
 
-from src.schemas import JobStatusUpdate, ProjectStateSnapshot, WriteResult
+from src.schemas import FrameWriteResult, JobStatusUpdate, ProjectStateSnapshot, WriteResult
 from src.server import mcp
 
 _SNAPSHOT = ProjectStateSnapshot(
@@ -70,8 +70,63 @@ async def test_update_job_status_success():
         response = await mcp.call_tool(
             "update_job_status", {"job_id": "job-1", "status": "running"}
         )
-    mock_update.assert_called_once_with("job-1", "running", None)
+    mock_update.assert_called_once_with(
+        "job-1",
+        "running",
+        None,
+        stage=None,
+        frames_total=None,
+        frames_completed=None,
+        frames_failed=None,
+    )
     assert response[1]["status"] == "running"
+
+
+async def test_update_job_status_forwards_frame_progress():
+    update = JobStatusUpdate(job_id="job-1", status="running", updated_at=datetime.now(UTC))
+    with patch("src.server.update_job_status", return_value=update) as mock_update:
+        await mcp.call_tool(
+            "update_job_status",
+            {
+                "job_id": "job-1",
+                "status": "running",
+                "stage": "frames",
+                "frames_total": 18,
+                "frames_completed": 12,
+                "frames_failed": 1,
+            },
+        )
+    mock_update.assert_called_once_with(
+        "job-1",
+        "running",
+        None,
+        stage="frames",
+        frames_total=18,
+        frames_completed=12,
+        frames_failed=1,
+    )
+
+
+async def test_write_frame_record_persists_a_valid_payload():
+    result = FrameWriteResult(shot_id="shot-1", frame_id="frame-1", updated_at=datetime.now(UTC))
+    with patch("src.server.write_frame_record", return_value=result) as mock_write:
+        response = await mcp.call_tool(
+            "write_frame_record",
+            {"shot_id": "shot-1", "image_url": "file:///a.png", "alt_text": "Dana waits."},
+        )
+    mock_write.assert_called_once_with(
+        "shot-1", "file:///a.png", "Dana waits.", needs_review=False
+    )
+    assert response[1]["shot_id"] == "shot-1"
+
+
+async def test_write_frame_record_rejects_missing_alt_text():
+    with patch("src.server.write_frame_record") as mock_write:
+        with pytest.raises(ToolError):
+            await mcp.call_tool(
+                "write_frame_record", {"shot_id": "shot-1", "image_url": "file:///a.png"}
+            )
+    mock_write.assert_not_called()
 
 
 async def test_api_client_errors_surface_as_tool_errors():

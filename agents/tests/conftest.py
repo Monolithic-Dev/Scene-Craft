@@ -22,7 +22,10 @@ class FakeMcp:
         self.style_reference = style_reference
         self.existing_scenes = existing_scenes or []
         self.written_scenes: list[dict] = []
-        self.job_statuses: list[tuple[str, str | None]] = []
+        self.written_frames: list[dict] = []
+        # Each entry is a dict so callers can add keyword-only progress
+        # fields without every existing assertion needing a wider tuple.
+        self.job_statuses: list[dict] = []
 
     async def get_project_state(self, project_id: str) -> dict:
         assert project_id == self.project_id
@@ -42,10 +45,44 @@ class FakeMcp:
             "shots_written": sum(len(s["shots"]) for s in scenes),
         }
 
-    async def update_job_status(
-        self, job_id: str, status: str, error_detail: str | None = None
+    async def write_frame_record(
+        self, shot_id: str, image_url: str, alt_text: str, *, needs_review: bool = False
     ) -> dict:
-        self.job_statuses.append((status, error_detail))
+        self.written_frames.append(
+            {
+                "shot_id": shot_id,
+                "image_url": image_url,
+                "alt_text": alt_text,
+                "needs_review": needs_review,
+            }
+        )
+        return {
+            "shot_id": shot_id,
+            "frame_id": f"frame-{len(self.written_frames)}",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+
+    async def update_job_status(
+        self,
+        job_id: str,
+        status: str,
+        error_detail: str | None = None,
+        *,
+        stage: str | None = None,
+        frames_total: int | None = None,
+        frames_completed: int | None = None,
+        frames_failed: int | None = None,
+    ) -> dict:
+        self.job_statuses.append(
+            {
+                "status": status,
+                "error_detail": error_detail,
+                "stage": stage,
+                "frames_total": frames_total,
+                "frames_completed": frames_completed,
+                "frames_failed": frames_failed,
+            }
+        )
         return {"job_id": job_id, "status": status, "updated_at": "2026-01-01T00:00:00Z"}
 
 

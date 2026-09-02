@@ -1,6 +1,13 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# agents/.local_storage — local-dev stand-in for Cloud Storage, always
+# usable out of the box (unlike the executable-path settings below, a
+# storage directory has a meaningful cross-platform default). See
+# shared/storage.py.
+_DEFAULT_LOCAL_STORAGE_DIR = str(Path(__file__).resolve().parents[1] / ".local_storage")
 
 
 class Settings(BaseSettings):
@@ -8,9 +15,27 @@ class Settings(BaseSettings):
 
     environment: str = "development"
 
-    # Gemini
+    # Gemini Developer API — text generation (breakdown_agent) and
+    # multimodal captioning (frame_agent), both free-tier friendly.
     gemini_api_key: str = ""
     gemini_model: str = "gemini-2.5-flash"
+
+    # Vertex AI — Imagen generation only. A separate client/mode from the
+    # Developer API client above: generate_images() is only available in
+    # Vertex AI mode (vertexai=True, project, location), it 404s/errors
+    # under a plain Developer API key even on a paid Gemini plan — see
+    # PHASE-03-FRAME-GENERATION.md and shared/imagen_client.py. Empty by
+    # default: a project without Vertex AI configured just can't generate
+    # frames yet, same "stays honestly unconfigured" pattern as
+    # mcp_server_python_executable below.
+    google_cloud_project: str = ""
+    google_cloud_location: str = "us-central1"
+    imagen_model: str = "imagen-4.0-generate-001"
+
+    # Local-dev stand-in for Cloud Storage (10-DIAGRAMS.md SS9 — frames are
+    # meant to live in Cloud Storage in production). Phase 6 swaps this for
+    # a real GCS client behind the same store_frame() signature.
+    local_storage_dir: str = _DEFAULT_LOCAL_STORAGE_DIR
 
     # How to reach mcp_server: spawned as a subprocess over stdio, per
     # 03-SYSTEM-DESIGN.md SS2. Empty by default (Windows' Scripts/python.exe

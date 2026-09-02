@@ -7,7 +7,13 @@ the Pydantic types from schemas.py.
 import httpx
 
 from src.config import get_settings
-from src.schemas import JobStatusUpdate, ProjectStateSnapshot, SceneInput, WriteResult
+from src.schemas import (
+    FrameWriteResult,
+    JobStatusUpdate,
+    ProjectStateSnapshot,
+    SceneInput,
+    WriteResult,
+)
 
 
 class ApiClientError(Exception):
@@ -52,10 +58,34 @@ def write_shot_records(script_id: str, scenes: list[SceneInput]) -> WriteResult:
 
 
 def update_job_status(
-    job_id: str, status: str, error_detail: str | None = None
+    job_id: str,
+    status: str,
+    error_detail: str | None = None,
+    *,
+    stage: str | None = None,
+    frames_total: int | None = None,
+    frames_completed: int | None = None,
+    frames_failed: int | None = None,
 ) -> JobStatusUpdate:
-    payload = {"status": status, "error_detail": error_detail}
+    payload = {
+        "status": status,
+        "error_detail": error_detail,
+        "stage": stage,
+        "frames_total": frames_total,
+        "frames_completed": frames_completed,
+        "frames_failed": frames_failed,
+    }
     with _client() as client:
         response = client.patch(f"/internal/v1/jobs/{job_id}/status", json=payload)
     _raise_for_status(response)
     return JobStatusUpdate.model_validate(response.json())
+
+
+def write_frame_record(
+    shot_id: str, image_url: str, alt_text: str, *, needs_review: bool = False
+) -> FrameWriteResult:
+    payload = {"image_url": image_url, "alt_text": alt_text, "needs_review": needs_review}
+    with _client() as client:
+        response = client.post(f"/internal/v1/shots/{shot_id}/frame", json=payload)
+    _raise_for_status(response)
+    return FrameWriteResult.model_validate(response.json())

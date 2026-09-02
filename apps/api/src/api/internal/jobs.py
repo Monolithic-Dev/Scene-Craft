@@ -12,7 +12,15 @@ router = APIRouter(prefix="/jobs", tags=["internal"])
 def update_job_status(
     job_id: str, payload: JobStatusUpdateRequest, db: DbSession, _: RequireInternalService
 ) -> JobStatusUpdateResponse:
-    job = JobService(db).update_status(job_id, payload.status, payload.error_detail)
+    job = JobService(db).update_status(
+        job_id,
+        payload.status,
+        payload.error_detail,
+        stage=payload.stage,
+        frames_total=payload.frames_total,
+        frames_completed=payload.frames_completed,
+        frames_failed=payload.frames_failed,
+    )
     return JobStatusUpdateResponse(
         job_id=job.id,
         status=job.status.value,
