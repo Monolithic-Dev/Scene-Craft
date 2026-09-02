@@ -26,11 +26,11 @@ Each phase is independently buildable and independently demonstrable. If the hac
 **Testing checklist:** Mocked Imagen tests for prompt construction; integration test for storage + retrieval; failure-path test for the placeholder fallback.
 **Commit message:** `feat(phase-3): storyboard frame generation agent`
 
-## Phase 4 — App-Build & Critic Agents (Replit integration)
-**Objectives:** Implement the App-Build Agent (Replit Agent API integration) and the Critic Agent verification loop.
-**Acceptance criteria:** A project with breakdown + frames produces a live, deployed, navigable previs app whose content the Critic Agent verifies matches expectations before the job is marked complete.
-**Testing checklist:** Integration test against a Replit sandbox project; Critic Agent test with an intentionally broken deployment to confirm it catches and triggers retry.
-**Commit message:** `feat(phase-4): app-build and critic agents with Replit integration`
+## Phase 4 — App-Build & Critic Agents
+**Objectives:** Implement the App-Build Agent (constrained-codegen previs generation — see `Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0/§1 for why this replaced the originally-specced Replit Agent API, which doesn't exist for a normal account) and the Critic Agent verification loop. Separately, satisfy the hackathon's actual Replit requirement: host SceneCraft itself on Replit (replit.app/replit.dev) and get a real piece of it built via a genuine Replit Agent session (§5 of the same doc).
+**Acceptance criteria:** A project with breakdown + frames produces a live, navigable previs page whose content the Critic Agent verifies matches expectations before the job is marked complete.
+**Testing checklist:** Critic Agent test with intentionally broken/missing shot data to confirm it catches and triggers retry; schema-validation test for the bounded customization JSON.
+**Commit message:** `feat(phase-4): app-build and critic agents (self-hosted previs generation)`
 
 ## Phase 5 — Iteration Loop & Agent Trace UI
 **Objectives:** Implement the Iteration Agent, the natural-language edit endpoint, and the live agent-trace panel in the frontend (Pub/Sub-driven).
@@ -62,6 +62,6 @@ For each phase:
 
 ## Anti-patterns to explicitly avoid
 
-- Building Phase 4's Replit integration before Phase 2's breakdown data exists to feed it — you'll end up mocking data you'll have to unwind later.
+- Building Phase 4's App-Build Agent before Phase 2's breakdown data exists to feed it — you'll end up mocking data you'll have to unwind later.
 - Skipping a phase's tests "to save time" — a hackathon demo failing live because Phase 3's placeholder-fallback path was never tested is a worse outcome than spending the extra hour on it now.
 - Writing all seven phases' code in one long session without running anything in between — verify as you go, the way this plan is sequenced to let you.

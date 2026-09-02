@@ -85,7 +85,7 @@ you're not confident about.
 
 ## 4. Scoped/Incremental Rebuilds
 
-This is where Phase 4's "read entirely from the data file" discipline pays off: the App-Build Agent's incremental path (already seamed in Phase 4 section 3) now gets used for real. `agent.py` in `app_build_agent` receives the affected shot IDs, regenerates only the `/data/project.json` file (not the app's structure/code), and pushes an update + redeploy through Replit rather than a full generation call. The Critic Agent, correspondingly, only re-verifies the affected shots, not the whole project — full re-verification on every single-field edit doesn't scale and isn't necessary.
+This is where Phase 4's "data and structure stay separate" discipline pays off: the App-Build Agent's incremental path (already seamed in Phase 4 §3) now gets used for real. `agent.py` in `app_build_agent` receives the affected shot IDs and regenerates only those entries in the data file (never the app shell) — the previs route re-renders instantly on next load since it's SceneCraft's own route, not a separate deployment to push. The Critic Agent, correspondingly, only re-verifies the affected shots, not the whole project — full re-verification on every single-field edit doesn't scale and isn't necessary.
 
 ## 5. Orchestrator Wiring
 
@@ -115,10 +115,10 @@ Replace Phase 2–4's polling (if you built a temporary poll loop) with a Firest
 
 **Scoped rebuild:**
 - `test_only_affected_shots_trigger_frame_regeneration_check` — an edit to `action_summary` (which could affect the frame) is scoped to the changed shot(s) only, not the whole project
-- `test_app_build_uses_incremental_path_for_iteration_jobs` — mock and assert the incremental (data-file-only) Replit call path is used, not a full regeneration
+- `test_app_build_uses_incremental_path_for_iteration_jobs` — mock and assert only the affected shots' data-file entries are regenerated, not a full rebuild
 
 **End-to-end:**
-- `test_full_iteration_loop_updates_deployed_app` — upload → generate → submit an edit → assert the redeployed app's data reflects the change, exercising the full sequence in `10-DIAGRAMS.md` §4
+- `test_full_iteration_loop_updates_deployed_app` — upload → generate → submit an edit → assert the previs route's data reflects the change, exercising the full sequence in `10-DIAGRAMS.md` §4
 
 **Frontend:**
 - `test_trace_panel_renders_live_steps` — component test asserting the panel updates as mocked Firestore snapshot events arrive

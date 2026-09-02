@@ -8,7 +8,7 @@
 
 ## What SceneCraft is
 
-A script goes in. A multi-agent system reads it, breaks it into scenes and shots, generates storyboard concept art, and **autonomously builds and deploys a real, interactive previs web app** — via Replit's Agent API — that a director can click through and iterate on in natural language. No developer required, no VFX budget required.
+A script goes in. A multi-agent system reads it, breaks it into scenes and shots, generates storyboard concept art, and **autonomously builds a real, interactive previs web app** — its own constrained-codegen capability, verified by a Critic Agent, hosted on Replit per the partner track's actual requirement (see `Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0) — that a director can click through and iterate on in natural language. No developer required, no VFX budget required.
 
 ## How to use this documentation set
 
@@ -37,7 +37,7 @@ Each phase in `08-IMPLEMENTATION-PLAN.md` now has its own deep-dive file — exa
 | 1 | `PHASE-01-FOUNDATIONS.md` | Auth, project CRUD, script upload, repo scaffolding, CI |
 | 2 | `PHASE-02-BREAKDOWN-AGENT.md` | Script/shot breakdown agent, MCP server, RAG chunking, job lifecycle |
 | 3 | `PHASE-03-FRAME-GENERATION.md` | Storyboard frame agent, Imagen, parallel fan-out, accessibility captioning |
-| 4 | `PHASE-04-APP-BUILD-AND-CRITIC.md` | The core Replit integration — app-build + critic/verification agents |
+| 4 | `PHASE-04-APP-BUILD-AND-CRITIC.md` | App-build + critic/verification agents, and how the real Replit build/host requirement is satisfied |
 | 5 | `PHASE-05-ITERATION-AND-TRACE-UI.md` | Natural-language iteration agent, live Firestore-backed trace UI |
 | 6 | `PHASE-06-OBSERVABILITY-SECURITY-DEPLOYMENT.md` | OTel/Grafana, Secret Manager, distributed rate limiting, Terraform, security review |
 | 7 | `PHASE-07-DEMO-AND-SUBMISSION.md` | README, judge guide, demo video script, pitch deck, final submission checklist |
@@ -56,6 +56,6 @@ A good pattern for a Claude Code session:
 ## Non-negotiables carried through every file
 
 - Google Cloud–native where sensible (Gemini, Vertex AI, Agent Builder/ADK, Cloud Run, Firestore, BigQuery, Secret Manager)
-- Replit's Agent API as the load-bearing partner integration — it is the mechanism that builds and deploys the previs app, not a bolted-on afterthought
+- Replit as a genuinely satisfied partner requirement — SceneCraft's own App-Build Agent generates the previs app, hosted on Replit (replit.app/replit.dev) with a real Replit-Agent-built piece merged into the repo, not a checkbox gesture (see `PHASE-04-APP-BUILD-AND-CRITIC.md` §0/§5)
 - Production practices throughout: typed code, tested code, structured error handling, no TODOs, no mocked architecture, no shortcuts
 - Every phase must be independently demonstrable — a judge (or you, at 2am before the deadline) should be able to see working software at the end of every phase, not just at the very end

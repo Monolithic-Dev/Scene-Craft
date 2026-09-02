@@ -2,7 +2,7 @@
 
 **SceneCraft** — an agentic previs studio built for **Agentic Cinema: The Blockbuster Hackathon** (Google Cloud, Replit partner track).
 
-A script goes in. A multi-agent system reads it, breaks it into scenes and shots, generates storyboard concept art, and autonomously builds and deploys a real, interactive previs web app — via Replit's Agent API — that a director can click through and iterate on in natural language.
+A script goes in. A multi-agent system reads it, breaks it into scenes and shots, generates storyboard concept art, and autonomously builds a real, interactive previs web app — its own capability, verified by a Critic Agent, served from SceneCraft itself and hosted on Replit per the partner track's actual requirement (see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0) — that a director can click through and iterate on in natural language.
 
 Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — start there. The phase-by-phase build plan is in [`docs/08-IMPLEMENTATION-PLAN.md`](docs/08-IMPLEMENTATION-PLAN.md), with a detailed spec per phase in [`docs/Phases/`](docs/Phases/).
 
@@ -15,7 +15,7 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 | 1 — Foundations | ✅ Done |
 | 2 — Script Breakdown Agent | ✅ Done |
 | 3 — Storyboard Frame Generation | ✅ Done |
-| 4 — App-Build & Critic Agents (Replit) | Not started |
+| 4 — App-Build & Critic Agents | Not started |
 | 5 — Iteration Loop & Trace UI | Not started |
 | 6 — Observability, Security, Deployment | Not started |
 | 7 — Demo & Submission | Not started |
