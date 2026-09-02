@@ -31,7 +31,16 @@ def test_get_job_endpoint_returns_current_status(client, auth_headers):
     assert resp.status_code == 200
     body = resp.json()
     assert body["status"] == "queued"
-    assert body["steps"] == [{"agent": "breakdown", "status": "queued", "at": None}]
+    assert body["steps"] == [
+        {
+            "agent": "breakdown",
+            "status": "queued",
+            "at": None,
+            "completed": None,
+            "total": None,
+            "failed": None,
+        }
+    ]
 
 
 def test_job_status_transitions_are_visible_through_the_api(client, auth_headers):
@@ -84,6 +93,93 @@ def test_cannot_access_another_users_job(client, auth_headers):
 def test_get_job_requires_auth(client):
     resp = client.get("/api/v1/jobs/some-id")
     assert resp.status_code == 401
+
+
+def test_frames_stage_progress_is_visible_through_the_api(client, auth_headers):
+    _, job_id = _upload_script(client, auth_headers)
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "running", "stage": "breakdown"},
+        headers=_INTERNAL_HEADERS,
+    )
+    mid_breakdown = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step = mid_breakdown["steps"]
+    assert breakdown_step == {
+        "agent": "breakdown",
+        "status": "running",
+        "at": None,
+        "completed": None,
+        "total": None,
+        "failed": None,
+    }
+    assert frames_step["status"] == "queued"
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={
+            "status": "running",
+            "stage": "frames",
+            "frames_total": 18,
+            "frames_completed": 0,
+            "frames_failed": 0,
+        },
+        headers=_INTERNAL_HEADERS,
+    )
+    started_frames = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step = started_frames["steps"]
+    assert breakdown_step["status"] == "complete"
+    assert frames_step["status"] == "running"
+    assert frames_step["total"] == 18
+    assert frames_step["completed"] == 0
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "running", "frames_completed": 12, "frames_failed": 1},
+        headers=_INTERNAL_HEADERS,
+    )
+    mid_frames = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    frames_step = mid_frames["steps"][1]
+    assert frames_step == {
+        "agent": "frames",
+        "status": "running",
+        "at": None,
+        "completed": 12,
+        "total": 18,
+        "failed": 1,
+    }
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "complete", "frames_completed": 18, "frames_failed": 1},
+        headers=_INTERNAL_HEADERS,
+    )
+    final = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step = final["steps"]
+    assert breakdown_step["status"] == "complete"
+    assert frames_step["status"] == "complete"
+    assert frames_step["completed"] == 18
+    assert frames_step["failed"] == 1
+
+
+def test_frames_stage_failure_does_not_relabel_completed_breakdown_step(client, auth_headers):
+    _, job_id = _upload_script(client, auth_headers)
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "running", "stage": "frames", "frames_total": 5},
+        headers=_INTERNAL_HEADERS,
+    )
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "failed_needs_review", "error_detail": "Imagen unreachable"},
+        headers=_INTERNAL_HEADERS,
+    )
+
+    body = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step = body["steps"]
+    assert breakdown_step["status"] == "complete"
+    assert frames_step["status"] == "failed"
 
 
 def test_update_job_status_rejects_unknown_status(client, auth_headers):
