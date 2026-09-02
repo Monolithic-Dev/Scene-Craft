@@ -41,6 +41,7 @@ class BreakdownService:
                 needs_review=scene.needs_review,
                 shots=[
                     ExistingShotState(
+                        id=shot.id,
                         shot_number=shot.shot_number,
                         characters=shot.characters,
                         location=shot.location,
@@ -48,6 +49,7 @@ class BreakdownService:
                         action_summary=shot.action_summary,
                         suggested_camera=shot.suggested_camera,
                         dialogue_snippet=shot.dialogue_snippet,
+                        needs_review=shot.needs_review,
                     )
                     for shot in scene.shots
                 ],
