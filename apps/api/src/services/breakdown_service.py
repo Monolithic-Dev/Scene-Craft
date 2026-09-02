@@ -6,7 +6,9 @@ from src.repositories.scene_repository import SceneRepository
 from src.repositories.script_repository import ScriptRepository
 from src.schemas.internal import (
     ExistingSceneState,
+    ExistingShotFrameState,
     ExistingShotState,
+    PrevisCustomizationState,
     ProjectStateResponse,
     SceneWriteInput,
     WriteBreakdownResponse,
@@ -50,6 +52,13 @@ class BreakdownService:
                         suggested_camera=shot.suggested_camera,
                         dialogue_snippet=shot.dialogue_snippet,
                         needs_review=shot.needs_review,
+                        frame=(
+                            ExistingShotFrameState(
+                                image_url=shot.frame.image_url, alt_text=shot.frame.alt_text
+                            )
+                            if shot.frame is not None
+                            else None
+                        ),
                     )
                     for shot in scene.shots
                 ],
@@ -57,12 +66,20 @@ class BreakdownService:
             for scene in self._scenes.list_for_script(script.id)
         ]
 
+        previs_customization = (
+            PrevisCustomizationState.model_validate(project.previs_customization)
+            if project.previs_customization is not None
+            else None
+        )
+
         return ProjectStateResponse(
             project_id=project.id,
+            title=project.title,
             script_id=script.id,
             script_text=script.raw_text,
             style_reference=project.style_reference,
             existing_scenes=existing_scenes,
+            previs_customization=previs_customization,
         )
 
     def write_breakdown(

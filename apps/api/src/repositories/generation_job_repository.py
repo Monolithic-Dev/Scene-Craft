@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from src.models.generation_job import GenerationJob, JobStatus, JobType
@@ -19,6 +20,17 @@ class GenerationJobRepository:
     def get_by_id(self, job_id: str) -> GenerationJob | None:
         return self._db.get(GenerationJob, job_id)
 
+    def get_latest_for_project(self, project_id: str) -> GenerationJob | None:
+        # Backs ProjectDetailResponse.deployed_app_url (PHASE-04-APP-BUILD-
+        # AND-CRITIC.md SS2) — the URL lives on the job, not the project,
+        # since a project can accumulate multiple jobs over its lifetime.
+        stmt = (
+            select(GenerationJob)
+            .where(GenerationJob.project_id == project_id)
+            .order_by(GenerationJob.created_at.desc())
+        )
+        return self._db.execute(stmt).scalars().first()
+
     def update_status(
         self,
         job: GenerationJob,
@@ -29,6 +41,7 @@ class GenerationJobRepository:
         frames_total: int | None = None,
         frames_completed: int | None = None,
         frames_failed: int | None = None,
+        deployed_app_url: str | None = None,
     ) -> GenerationJob:
         job.status = status
         if error_detail is not None:
@@ -43,6 +56,8 @@ class GenerationJobRepository:
             job.frames_completed = frames_completed
         if frames_failed is not None:
             job.frames_failed = frames_failed
+        if deployed_app_url is not None:
+            job.deployed_app_url = deployed_app_url
         if status in (JobStatus.COMPLETE, JobStatus.FAILED_NEEDS_REVIEW):
             job.completed_at = datetime.now(UTC)
         self._db.commit()

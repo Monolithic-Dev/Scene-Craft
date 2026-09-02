@@ -43,3 +43,59 @@ def test_cannot_access_another_users_project(client):
 def test_create_project_requires_title(client, auth_headers):
     resp = client.post("/api/v1/projects", json={"title": ""}, headers=auth_headers)
     assert resp.status_code == 422
+
+
+def test_get_project_has_no_deployed_app_url_before_a_job_sets_it(client, auth_headers):
+    project = client.post(
+        "/api/v1/projects", json={"title": "Midnight Ferry"}, headers=auth_headers
+    ).json()
+    resp = client.get(f"/api/v1/projects/{project['id']}", headers=auth_headers)
+    assert resp.json()["deployed_app_url"] is None
+    assert resp.json()["previs_customization"] is None
+
+
+def test_get_project_reflects_deployed_app_url_from_latest_job(client, auth_headers):
+    import io
+
+    from src.core.config import get_settings
+
+    settings = get_settings()
+    internal_headers = {"X-Internal-Service-Key": settings.internal_service_key}
+
+    project = client.post(
+        "/api/v1/projects", json={"title": "Midnight Ferry"}, headers=auth_headers
+    ).json()
+    file_content = io.BytesIO(b"INT. FERRY - NIGHT\n\nDana waits.")
+    script = client.post(
+        f"/api/v1/projects/{project['id']}/scripts",
+        files={"file": ("script.txt", file_content, "text/plain")},
+        headers=auth_headers,
+    ).json()
+
+    client.patch(
+        f"/internal/v1/jobs/{script['job_id']}/status",
+        json={
+            "status": "running",
+            "stage": "app_build",
+            "deployed_app_url": f"/projects/{project['id']}/previs",
+        },
+        headers=internal_headers,
+    )
+    client.post(
+        f"/internal/v1/projects/{project['id']}/previs-customization",
+        json={
+            "title": "Midnight Ferry",
+            "accent_color": "#ff6a00",
+            "tone_note": "Tense, nocturnal",
+        },
+        headers=internal_headers,
+    )
+
+    resp = client.get(f"/api/v1/projects/{project['id']}", headers=auth_headers)
+    body = resp.json()
+    assert body["deployed_app_url"] == f"/projects/{project['id']}/previs"
+    assert body["previs_customization"] == {
+        "title": "Midnight Ferry",
+        "accent_color": "#ff6a00",
+        "tone_note": "Tense, nocturnal",
+    }

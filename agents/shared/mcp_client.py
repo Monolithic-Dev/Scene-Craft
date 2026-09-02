@@ -91,6 +91,7 @@ async def update_job_status(
     frames_total: int | None = None,
     frames_completed: int | None = None,
     frames_failed: int | None = None,
+    deployed_app_url: str | None = None,
 ) -> dict[str, Any]:
     return await _call_tool(
         "update_job_status",
@@ -102,6 +103,7 @@ async def update_job_status(
             "frames_total": frames_total,
             "frames_completed": frames_completed,
             "frames_failed": frames_failed,
+            "deployed_app_url": deployed_app_url,
         },
     )
 
@@ -116,5 +118,19 @@ async def write_frame_record(
             "image_url": image_url,
             "alt_text": alt_text,
             "needs_review": needs_review,
+        },
+    )
+
+
+async def write_previs_customization(
+    project_id: str, title: str, accent_color: str, tone_note: str
+) -> dict[str, Any]:
+    return await _call_tool(
+        "write_previs_customization",
+        {
+            "project_id": project_id,
+            "title": title,
+            "accent_color": accent_color,
+            "tone_note": tone_note,
         },
     )

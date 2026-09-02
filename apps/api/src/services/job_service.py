@@ -35,6 +35,7 @@ class JobService:
         frames_total: int | None = None,
         frames_completed: int | None = None,
         frames_failed: int | None = None,
+        deployed_app_url: str | None = None,
     ) -> GenerationJob:
         job = self._jobs.get_by_id(job_id)
         if job is None:
@@ -49,4 +50,8 @@ class JobService:
             frames_total=frames_total,
             frames_completed=frames_completed,
             frames_failed=frames_failed,
+            deployed_app_url=deployed_app_url,
         )
+
+    def get_latest_job_for_project(self, project_id: str) -> GenerationJob | None:
+        return self._jobs.get_latest_for_project(project_id)

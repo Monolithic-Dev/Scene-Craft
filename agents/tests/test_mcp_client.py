@@ -15,6 +15,7 @@ from shared.mcp_client import (
     get_project_state,
     update_job_status,
     write_frame_record,
+    write_previs_customization,
 )
 
 
@@ -87,6 +88,7 @@ async def test_update_job_status_forwards_progress_kwargs_as_tool_arguments():
         "stage": "frames",
         "frames_total": 18,
         "frames_completed": 12,
+        "deployed_app_url": None,
         "frames_failed": 1,
     }
 
@@ -104,3 +106,37 @@ async def test_write_frame_record_sends_expected_tool_arguments():
         )
 
     assert response == {"shot_id": "s1", "frame_id": "f1", "updated_at": "2026-01-01T00:00:00Z"}
+
+
+async def test_write_previs_customization_sends_expected_tool_arguments():
+    text_block = TextContent(
+        type="text", text='{"project_id": "p1", "title": "Midnight Ferry"}'
+    )
+    result = MagicMock(isError=False, structuredContent=None, content=[text_block])
+    captured_args: dict = {}
+
+    @asynccontextmanager
+    async def _session():
+        session = AsyncMock()
+
+        async def _call_tool(name, arguments):
+            captured_args["name"] = name
+            captured_args.update(arguments)
+            return result
+
+        session.call_tool = _call_tool
+        yield session
+
+    with patch("shared.mcp_client._session", _session):
+        response = await write_previs_customization(
+            "p1", "Midnight Ferry", "#ff6a00", "Tense, nocturnal."
+        )
+
+    assert captured_args == {
+        "name": "write_previs_customization",
+        "project_id": "p1",
+        "title": "Midnight Ferry",
+        "accent_color": "#ff6a00",
+        "tone_note": "Tense, nocturnal.",
+    }
+    assert response == {"project_id": "p1", "title": "Midnight Ferry"}

@@ -56,9 +56,10 @@ export default function DashboardPage() {
     setError(null);
     setStatus("Uploading…");
     try {
-      await api.uploadScript(selectedProjectId, file);
-      setStatus("Script uploaded. Breakdown generation isn't wired up yet — that's Phase 2.");
+      const script = await api.uploadScript(selectedProjectId, file);
       setFile(null);
+      const query = script.job_id ? `?job=${script.job_id}` : "";
+      router.push(`/dashboard/${selectedProjectId}${query}`);
     } catch (err) {
       setStatus(null);
       setError(err instanceof ApiError ? err.message : "Upload failed.");
@@ -106,10 +107,10 @@ export default function DashboardPage() {
           ) : (
             <ul className="space-y-2">
               {projects.map((p) => (
-                <li key={p.id}>
+                <li key={p.id} className="flex items-stretch gap-2">
                   <button
                     onClick={() => setSelectedProjectId(p.id)}
-                    className={`focus-ring w-full rounded-md border px-4 py-3 text-left transition ${
+                    className={`focus-ring flex-1 rounded-md border px-4 py-3 text-left transition ${
                       selectedProjectId === p.id
                         ? "border-signal bg-signal/10"
                         : "border-wire bg-charcoal2 hover:border-chalk/30"
@@ -119,6 +120,12 @@ export default function DashboardPage() {
                     {p.style_reference && (
                       <span className="ml-2 text-sm text-chalk/50">— {p.style_reference}</span>
                     )}
+                  </button>
+                  <button
+                    onClick={() => router.push(`/dashboard/${p.id}`)}
+                    className="focus-ring rounded-md border border-wire px-3 text-sm text-chalk/70 hover:border-chalk/30"
+                  >
+                    Open
                   </button>
                 </li>
               ))}

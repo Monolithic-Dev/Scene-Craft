@@ -13,16 +13,21 @@ class FakeMcp:
         *,
         script_id: str = "script-1",
         project_id: str = "proj-1",
+        title: str = "Midnight Ferry",
         style_reference: str | None = None,
         existing_scenes: list[dict] | None = None,
+        previs_customization: dict | None = None,
     ) -> None:
         self.script_text = script_text
         self.script_id = script_id
         self.project_id = project_id
+        self.title = title
         self.style_reference = style_reference
         self.existing_scenes = existing_scenes or []
+        self.previs_customization = previs_customization
         self.written_scenes: list[dict] = []
         self.written_frames: list[dict] = []
+        self.written_customizations: list[dict] = []
         # Each entry is a dict so callers can add keyword-only progress
         # fields without every existing assertion needing a wider tuple.
         self.job_statuses: list[dict] = []
@@ -31,10 +36,12 @@ class FakeMcp:
         assert project_id == self.project_id
         return {
             "project_id": self.project_id,
+            "title": self.title,
             "script_id": self.script_id,
             "script_text": self.script_text,
             "style_reference": self.style_reference,
             "existing_scenes": self.existing_scenes,
+            "previs_customization": self.previs_customization,
         }
 
     async def write_shot_records(self, script_id: str, scenes: list[dict]) -> dict:
@@ -72,6 +79,7 @@ class FakeMcp:
         frames_total: int | None = None,
         frames_completed: int | None = None,
         frames_failed: int | None = None,
+        deployed_app_url: str | None = None,
     ) -> dict:
         self.job_statuses.append(
             {
@@ -81,9 +89,28 @@ class FakeMcp:
                 "frames_total": frames_total,
                 "frames_completed": frames_completed,
                 "frames_failed": frames_failed,
+                "deployed_app_url": deployed_app_url,
             }
         )
         return {"job_id": job_id, "status": status, "updated_at": "2026-01-01T00:00:00Z"}
+
+    async def write_previs_customization(
+        self, project_id: str, title: str, accent_color: str, tone_note: str
+    ) -> dict:
+        self.written_customizations.append(
+            {
+                "project_id": project_id,
+                "title": title,
+                "accent_color": accent_color,
+                "tone_note": tone_note,
+            }
+        )
+        self.previs_customization = {
+            "title": title,
+            "accent_color": accent_color,
+            "tone_note": tone_note,
+        }
+        return {"project_id": project_id, "title": title}
 
 
 @pytest.fixture
