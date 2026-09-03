@@ -18,6 +18,12 @@ variable "environment" {
   }
 }
 
+variable "github_repository" {
+  type        = string
+  default     = "Monolithic-Dev/Scene-Craft"
+  description = "owner/repo — scopes Workload Identity Federation (wif.tf) so only this exact repo's GitHub Actions runs can authenticate as the deployer service account."
+}
+
 variable "container_image_tag" {
   type        = string
   default     = "latest"
