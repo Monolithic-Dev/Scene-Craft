@@ -101,3 +101,83 @@ def test_write_breakdown_rejects_unknown_script(client, auth_headers):
 def test_get_project_state_for_unknown_project_is_not_found(client, auth_headers):
     resp = client.get("/internal/v1/projects/does-not-exist/state", headers=_HEADERS)
     assert resp.status_code == 404
+
+
+def test_get_project_state_includes_frame_once_written(client, auth_headers):
+    """The App-Build/Critic Agents read frame coverage off the same
+    get_project_state snapshot as everything else — PHASE-04-APP-BUILD-AND-
+    CRITIC.md SS4.
+    """
+    project_id, script_id = _create_project_with_script(client, auth_headers)
+    payload = {
+        "scenes": [
+            {
+                "scene_number": 1,
+                "heading": "INT. FERRY - NIGHT",
+                "shots": [
+                    {
+                        "shot_number": 1,
+                        "location": "Ferry deck",
+                        "action_summary": "Dana stares at the water.",
+                        "suggested_camera": "wide",
+                    }
+                ],
+            }
+        ]
+    }
+    client.post(f"/internal/v1/scripts/{script_id}/breakdown", json=payload, headers=_HEADERS)
+    state = client.get(f"/internal/v1/projects/{project_id}/state", headers=_HEADERS).json()
+    shot = state["existing_scenes"][0]["shots"][0]
+    assert shot["frame"] is None
+
+    shot_id = shot["id"]
+    client.post(
+        f"/internal/v1/shots/{shot_id}/frame",
+        json={"image_url": "file:///a.png", "alt_text": "Dana stares at the water."},
+        headers=_HEADERS,
+    )
+    state = client.get(f"/internal/v1/projects/{project_id}/state", headers=_HEADERS).json()
+    shot = state["existing_scenes"][0]["shots"][0]
+    assert shot["frame"] == {"image_url": "file:///a.png", "alt_text": "Dana stares at the water."}
+
+
+def test_get_project_state_previs_customization_is_none_until_written(client, auth_headers):
+    project_id, _ = _create_project_with_script(client, auth_headers)
+    state = client.get(f"/internal/v1/projects/{project_id}/state", headers=_HEADERS).json()
+    assert state["previs_customization"] is None
+
+
+def test_write_previs_customization_persists_and_is_readable_back(client, auth_headers):
+    project_id, _ = _create_project_with_script(client, auth_headers)
+    resp = client.post(
+        f"/internal/v1/projects/{project_id}/previs-customization",
+        json={
+            "title": "Midnight Ferry",
+            "accent_color": "#ff6a00",
+            "tone_note": "Tense, nocturnal",
+        },
+        headers=_HEADERS,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "project_id": project_id,
+        "title": "Midnight Ferry",
+        "accent_color": "#ff6a00",
+        "tone_note": "Tense, nocturnal",
+    }
+
+    state = client.get(f"/internal/v1/projects/{project_id}/state", headers=_HEADERS).json()
+    assert state["previs_customization"] == {
+        "title": "Midnight Ferry",
+        "accent_color": "#ff6a00",
+        "tone_note": "Tense, nocturnal",
+    }
+
+
+def test_write_previs_customization_rejects_unknown_project(client, auth_headers):
+    resp = client.post(
+        "/internal/v1/projects/does-not-exist/previs-customization",
+        json={"title": "X", "accent_color": "#000000", "tone_note": "Y"},
+        headers=_HEADERS,
+    )
+    assert resp.status_code == 404

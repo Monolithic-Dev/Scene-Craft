@@ -95,10 +95,10 @@ users ──< projects ──< scripts ──< scenes ──< shots ──< shot
 | id | UUID (PK) | |
 | project_id | UUID (FK → projects.id) | indexed |
 | job_type | enum | `initial_generation` \| `iteration` |
-| status | enum | `queued` \| `running` \| `complete` \| `failed_needs_review` |
-| deployed_app_url | text | nullable until App-Build Agent succeeds |
-| error_detail | text | nullable |
-| current_stage | varchar(50), nullable | added in Phase 3 — which stage of the plan (`breakdown` \| `frames`) is active; lets `GET /jobs/{id}` derive per-stage step status without a separate step-tracking table (Phase 5 replaces this with real Firestore-backed step events) |
+| status | enum | `queued` \| `running` \| `complete` \| `failed_needs_review` \| `needs_clarification` (added Phase 5 — the Iteration Agent's ambiguous-request short circuit, distinct from `failed_needs_review`: an expected, recoverable stop, not an error) |
+| deployed_app_url | text | nullable until some job's App-Build stage has succeeded; reflects the most recent *successful* deployment, not just the most recent job (Phase 5: a later job stuck on `needs_clarification` must not make an already-live previs disappear) |
+| error_detail | text | nullable; also carries the Iteration Agent's clarification question when `status == needs_clarification` |
+| current_stage | varchar(50), nullable | which stage of the active plan is running — `breakdown`\|`frames`\|`app_build`\|`critic` for `initial_generation`, `iteration`\|`app_build`\|`critic` for `iteration` (Phase 5); lets `GET /jobs/{id}` derive per-stage step status without a separate step-tracking table. Phase 5 additionally mirrors this into Firestore (`job_traces/{job_id}`) for the live trace panel — see `PHASE-05-ITERATION-AND-TRACE-UI.md` §2. |
 | frames_total / frames_completed / frames_failed | integer, nullable | added in Phase 3 — sub-progress for the `frames` stage's fan-out, reported by the Frame Agent as shots complete; see `PHASE-03-FRAME-GENERATION.md` §6 |
 | created_at / completed_at | timestamptz | |
 

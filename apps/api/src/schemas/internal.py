@@ -36,6 +36,11 @@ class WriteBreakdownResponse(BaseModel):
     shots_written: int
 
 
+class ExistingShotFrameState(BaseModel):
+    image_url: str
+    alt_text: str
+
+
 class ExistingShotState(BaseModel):
     # Added in Phase 3 — the Frame Agent fans out one worker per shot and
     # must write its ShotFrame record against the shot's real id (shots are
@@ -51,6 +56,10 @@ class ExistingShotState(BaseModel):
     suggested_camera: str
     dialogue_snippet: str | None
     needs_review: bool
+    # Added in Phase 4 — the App-Build/Critic Agents need frame coverage per
+    # shot (PHASE-04-APP-BUILD-AND-CRITIC.md SS4); None until Phase 3's Frame
+    # Agent has run, same as the rest of this snapshot.
+    frame: ExistingShotFrameState | None = None
 
 
 class ExistingSceneState(BaseModel):
@@ -61,12 +70,41 @@ class ExistingSceneState(BaseModel):
     shots: list[ExistingShotState]
 
 
+class PrevisCustomizationState(BaseModel):
+    title: str
+    accent_color: str
+    tone_note: str
+
+
 class ProjectStateResponse(BaseModel):
     project_id: str
+    # Added in Phase 4 — the App-Build Agent's customization step displays
+    # the project's real, user-chosen title rather than having an LLM
+    # re-derive one (PHASE-04-APP-BUILD-AND-CRITIC.md SS3: "the data is
+    # deterministic... only the *instruction*/styling needs to be
+    # LLM-authored").
+    title: str
     script_id: str
     script_text: str
     style_reference: str | None
     existing_scenes: list[ExistingSceneState]
+    # Added in Phase 4 — None until the App-Build Agent has written it; the
+    # Critic Agent's schema check (PHASE-04-APP-BUILD-AND-CRITIC.md SS4)
+    # reads it back through the same snapshot as everything else it verifies.
+    previs_customization: PrevisCustomizationState | None = None
+
+
+class PrevisCustomizationWriteRequest(BaseModel):
+    title: str
+    accent_color: str
+    tone_note: str
+
+
+class PrevisCustomizationWriteResponse(BaseModel):
+    project_id: str
+    title: str
+    accent_color: str
+    tone_note: str
 
 
 class JobStatusUpdateRequest(BaseModel):
@@ -80,6 +118,10 @@ class JobStatusUpdateRequest(BaseModel):
     frames_total: int | None = None
     frames_completed: int | None = None
     frames_failed: int | None = None
+    # Added in Phase 4 — set once by the App-Build Agent when it publishes
+    # the previs page; None means "no change", same convention as the
+    # frames_* counters above.
+    deployed_app_url: str | None = None
 
 
 class JobStatusUpdateResponse(BaseModel):
@@ -98,3 +140,30 @@ class ShotFrameWriteResponse(BaseModel):
     shot_id: str
     frame_id: str
     updated_at: datetime
+
+
+class ShotEditWriteRequest(BaseModel):
+    field: str
+    new_value: str
+    requested_by: str
+
+
+class ShotEditWriteResponse(BaseModel):
+    shot_id: str
+    edit_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class ShotEditSummary(BaseModel):
+    shot_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class RecentEditsResponse(BaseModel):
+    edits: list[ShotEditSummary]

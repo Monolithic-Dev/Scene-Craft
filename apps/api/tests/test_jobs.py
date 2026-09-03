@@ -104,7 +104,7 @@ def test_frames_stage_progress_is_visible_through_the_api(client, auth_headers):
         headers=_INTERNAL_HEADERS,
     )
     mid_breakdown = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
-    breakdown_step, frames_step = mid_breakdown["steps"]
+    breakdown_step, frames_step, app_build_step, critic_step = mid_breakdown["steps"]
     assert breakdown_step == {
         "agent": "breakdown",
         "status": "running",
@@ -114,6 +114,8 @@ def test_frames_stage_progress_is_visible_through_the_api(client, auth_headers):
         "failed": None,
     }
     assert frames_step["status"] == "queued"
+    assert app_build_step["status"] == "queued"
+    assert critic_step["status"] == "queued"
 
     client.patch(
         f"/internal/v1/jobs/{job_id}/status",
@@ -127,11 +129,12 @@ def test_frames_stage_progress_is_visible_through_the_api(client, auth_headers):
         headers=_INTERNAL_HEADERS,
     )
     started_frames = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
-    breakdown_step, frames_step = started_frames["steps"]
+    breakdown_step, frames_step, app_build_step, critic_step = started_frames["steps"]
     assert breakdown_step["status"] == "complete"
     assert frames_step["status"] == "running"
     assert frames_step["total"] == 18
     assert frames_step["completed"] == 0
+    assert app_build_step["status"] == "queued"
 
     client.patch(
         f"/internal/v1/jobs/{job_id}/status",
@@ -151,15 +154,36 @@ def test_frames_stage_progress_is_visible_through_the_api(client, auth_headers):
 
     client.patch(
         f"/internal/v1/jobs/{job_id}/status",
-        json={"status": "complete", "frames_completed": 18, "frames_failed": 1},
+        json={
+            "status": "running",
+            "stage": "app_build",
+            "frames_completed": 18,
+            "frames_failed": 1,
+            "deployed_app_url": "/projects/proj-1/previs",
+        },
         headers=_INTERNAL_HEADERS,
     )
-    final = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
-    breakdown_step, frames_step = final["steps"]
+    mid_app_build = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step, app_build_step, critic_step = mid_app_build["steps"]
     assert breakdown_step["status"] == "complete"
     assert frames_step["status"] == "complete"
     assert frames_step["completed"] == 18
     assert frames_step["failed"] == 1
+    assert app_build_step["status"] == "running"
+    assert critic_step["status"] == "queued"
+    assert mid_app_build["deployed_app_url"] == "/projects/proj-1/previs"
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "complete", "stage": "critic"},
+        headers=_INTERNAL_HEADERS,
+    )
+    final = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step, app_build_step, critic_step = final["steps"]
+    assert breakdown_step["status"] == "complete"
+    assert frames_step["status"] == "complete"
+    assert app_build_step["status"] == "complete"
+    assert critic_step["status"] == "complete"
 
 
 def test_frames_stage_failure_does_not_relabel_completed_breakdown_step(client, auth_headers):
@@ -177,9 +201,42 @@ def test_frames_stage_failure_does_not_relabel_completed_breakdown_step(client, 
     )
 
     body = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
-    breakdown_step, frames_step = body["steps"]
+    breakdown_step, frames_step, app_build_step, critic_step = body["steps"]
     assert breakdown_step["status"] == "complete"
     assert frames_step["status"] == "failed"
+    assert app_build_step["status"] == "not_started"
+    assert critic_step["status"] == "not_started"
+
+
+def test_app_build_and_critic_stage_progress_is_visible_through_the_api(client, auth_headers):
+    """Phase 4's addition to _STAGE_ORDER — app_build/critic follow the same
+    running/complete/failed contract as breakdown/frames, and
+    deployed_app_url flows through to GET /jobs/{id} once app_build sets it.
+    """
+    _, job_id = _upload_script(client, auth_headers)
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "running", "stage": "critic"},
+        headers=_INTERNAL_HEADERS,
+    )
+    body = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step, app_build_step, critic_step = body["steps"]
+    assert breakdown_step["status"] == "complete"
+    assert frames_step["status"] == "complete"
+    assert app_build_step["status"] == "complete"
+    assert critic_step["status"] == "running"
+
+    client.patch(
+        f"/internal/v1/jobs/{job_id}/status",
+        json={"status": "failed_needs_review", "error_detail": "Critic verification failed twice"},
+        headers=_INTERNAL_HEADERS,
+    )
+    final = client.get(f"/api/v1/jobs/{job_id}", headers=auth_headers).json()
+    breakdown_step, frames_step, app_build_step, critic_step = final["steps"]
+    assert app_build_step["status"] == "complete"
+    assert critic_step["status"] == "failed"
+    assert final["error_detail"] == "Critic verification failed twice"
 
 
 def test_update_job_status_rejects_unknown_status(client, auth_headers):

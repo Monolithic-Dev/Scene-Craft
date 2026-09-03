@@ -2,19 +2,29 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from src.models.generation_job import GenerationJob, JobStatus
+from src.models.generation_job import GenerationJob, JobStatus, JobType
 
-# The initial_generation plan is [breakdown, frames] as of Phase 3 (04-AGENT-
-# ARCHITECTURE.md SS1) — app_build/critic arrive in Phase 4. "steps" is
-# derived from the job's own status/current_stage/frames_* columns rather
-# than a separate step-tracking table; Phase 5 replaces this with real
-# per-agent step events streamed through Firestore — see
-# PHASE-05-ITERATION-AND-TRACE-UI.md.
+# "steps" is derived from the job's own status/current_stage/frames_*
+# columns rather than a separate step-tracking table — see build_steps
+# below. Phase 5 reuses this exact derivation to populate the Firestore
+# trace mirror (src/core/firestore_client.py via JobService), so the two
+# can never drift out of shape with each other; Cloud SQL (this table)
+# stays the authoritative source either way.
 _TERMINAL_STEP_STATUS_BY_JOB_STATUS: dict[JobStatus, str] = {
     JobStatus.COMPLETE: "complete",
     JobStatus.FAILED_NEEDS_REVIEW: "failed",
+    # Added in Phase 5 — the Iteration Agent's ambiguous-request short
+    # circuit (PHASE-05-ITERATION-AND-TRACE-UI.md SS3 point 3). Distinct
+    # from "failed": an expected, recoverable stop, not an error.
+    JobStatus.NEEDS_CLARIFICATION: "needs_clarification",
 }
-_STAGE_ORDER = ("breakdown", "frames")
+_STAGE_ORDER_BY_JOB_TYPE: dict[JobType, tuple[str, ...]] = {
+    JobType.INITIAL_GENERATION: ("breakdown", "frames", "app_build", "critic"),
+    # Added in Phase 5 — PHASE-05-ITERATION-AND-TRACE-UI.md SS5: "The
+    # Coordinator's plan for job_type == iteration is
+    # [iteration, app_build (scoped), critic (scoped)]".
+    JobType.ITERATION: ("iteration", "app_build", "critic"),
+}
 
 
 class JobStep(BaseModel):
@@ -31,6 +41,11 @@ class JobResponse(BaseModel):
     status: str
     steps: list[JobStep]
     deployed_app_url: str | None
+    # Added-to meaning in Phase 5: holds either a failure explanation
+    # (FAILED_NEEDS_REVIEW) or the Iteration Agent's clarification question
+    # (NEEDS_CLARIFICATION) — the two are mutually exclusive by definition
+    # (a job has exactly one status), so one nullable field covers both
+    # rather than adding a second, always-empty-in-the-other-case column.
     error_detail: str | None
 
     @classmethod
@@ -38,34 +53,33 @@ class JobResponse(BaseModel):
         return cls(
             id=job.id,
             status=job.status.value,
-            steps=_build_steps(job),
+            steps=build_steps(job),
             deployed_app_url=job.deployed_app_url,
             error_detail=job.error_detail,
         )
 
 
-def _build_steps(job: GenerationJob) -> list[JobStep]:
+def build_steps(job: GenerationJob) -> list[JobStep]:
+    stage_order = _STAGE_ORDER_BY_JOB_TYPE[job.job_type]
     if job.status == JobStatus.QUEUED:
-        return [JobStep(agent="breakdown", status="queued", at=None)]
+        return [JobStep(agent=stage_order[0], status="queued", at=None)]
 
     terminal_status = _TERMINAL_STEP_STATUS_BY_JOB_STATUS.get(job.status)
     current_stage_index = (
-        _STAGE_ORDER.index(job.current_stage)
-        if job.current_stage in _STAGE_ORDER
-        else 0
+        stage_order.index(job.current_stage) if job.current_stage in stage_order else 0
     )
 
     steps: list[JobStep] = []
-    for index, stage in enumerate(_STAGE_ORDER):
-        if terminal_status == "failed":
+    for index, stage in enumerate(stage_order):
+        if terminal_status in ("failed", "needs_clarification"):
             # Stages strictly before current_stage already succeeded; the
-            # failure happened in current_stage itself; nothing after it
-            # ever started. Without this split, a frames-stage failure would
-            # wrongly relabel a breakdown stage that already succeeded.
+            # stop happened in current_stage itself; nothing after it ever
+            # started. Without this split, a later-stage stop would wrongly
+            # relabel an earlier stage that already succeeded.
             if index < current_stage_index:
                 status = "complete"
             elif index == current_stage_index:
-                status = "failed"
+                status = terminal_status
             else:
                 status = "not_started"
         elif terminal_status == "complete":
@@ -78,7 +92,7 @@ def _build_steps(job: GenerationJob) -> list[JobStep]:
             status = "queued"
 
         step = JobStep(agent=stage, status=status, at=job.completed_at)
-        if stage == "frames" and status != "queued" and status != "not_started":
+        if stage == "frames" and status not in ("queued", "not_started"):
             step.completed = job.frames_completed
             step.total = job.frames_total
             step.failed = job.frames_failed

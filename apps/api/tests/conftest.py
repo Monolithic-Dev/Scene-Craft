@@ -12,17 +12,21 @@ from src.main import _request_log, app
 
 @pytest.fixture(autouse=True)
 def _never_spawn_real_agent_processes():
-    """POST /projects/{id}/scripts schedules trigger_initial_generation_job
-    as a real BackgroundTask, which TestClient executes for real after each
-    response — without this, whether a test suite run actually spawns an OS
+    """POST /projects/{id}/scripts and POST /projects/{id}/iterate schedule
+    trigger_initial_generation_job/trigger_iteration_job as real
+    BackgroundTasks, which TestClient executes for real after each response
+    — without this, whether a test suite run actually spawns an OS
     subprocess (and what it does) depends on whatever AGENTS_PYTHON_EXECUTABLE
     happens to resolve to in the developer's own .env, which is exactly the
     kind of environment-dependent behavior a test suite must not have.
-    trigger_initial_generation_job's own unit tests (test_agent_runner.py)
-    import it directly from src.core.agent_runner and are unaffected by this
-    patch, which only touches the reference api/v1/scripts.py holds.
+    Both triggers' own unit tests (test_agent_runner.py) import them
+    directly from src.core.agent_runner and are unaffected by this patch,
+    which only touches the references api/v1/scripts.py and api/v1/iterate.py hold.
     """
-    with patch("src.api.v1.scripts.trigger_initial_generation_job", return_value=False):
+    with (
+        patch("src.api.v1.scripts.trigger_initial_generation_job", return_value=False),
+        patch("src.api.v1.iterate.trigger_iteration_job", return_value=False),
+    ):
         yield
 
 

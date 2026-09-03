@@ -10,8 +10,11 @@ from src.config import get_settings
 from src.schemas import (
     FrameWriteResult,
     JobStatusUpdate,
+    PrevisCustomizationWriteResult,
     ProjectStateSnapshot,
+    RecentEdits,
     SceneInput,
+    ShotEditWriteResult,
     WriteResult,
 )
 
@@ -66,6 +69,7 @@ def update_job_status(
     frames_total: int | None = None,
     frames_completed: int | None = None,
     frames_failed: int | None = None,
+    deployed_app_url: str | None = None,
 ) -> JobStatusUpdate:
     payload = {
         "status": status,
@@ -74,6 +78,7 @@ def update_job_status(
         "frames_total": frames_total,
         "frames_completed": frames_completed,
         "frames_failed": frames_failed,
+        "deployed_app_url": deployed_app_url,
     }
     with _client() as client:
         response = client.patch(f"/internal/v1/jobs/{job_id}/status", json=payload)
@@ -89,3 +94,34 @@ def write_frame_record(
         response = client.post(f"/internal/v1/shots/{shot_id}/frame", json=payload)
     _raise_for_status(response)
     return FrameWriteResult.model_validate(response.json())
+
+
+def write_previs_customization(
+    project_id: str, title: str, accent_color: str, tone_note: str
+) -> PrevisCustomizationWriteResult:
+    payload = {"title": title, "accent_color": accent_color, "tone_note": tone_note}
+    with _client() as client:
+        response = client.post(
+            f"/internal/v1/projects/{project_id}/previs-customization", json=payload
+        )
+    _raise_for_status(response)
+    return PrevisCustomizationWriteResult.model_validate(response.json())
+
+
+def write_shot_edit(
+    shot_id: str, field: str, new_value: str, requested_by: str
+) -> ShotEditWriteResult:
+    payload = {"field": field, "new_value": new_value, "requested_by": requested_by}
+    with _client() as client:
+        response = client.post(f"/internal/v1/shots/{shot_id}/edit", json=payload)
+    _raise_for_status(response)
+    return ShotEditWriteResult.model_validate(response.json())
+
+
+def get_edit_history(project_id: str, limit: int = 10) -> RecentEdits:
+    with _client() as client:
+        response = client.get(
+            f"/internal/v1/projects/{project_id}/edit-history", params={"limit": limit}
+        )
+    _raise_for_status(response)
+    return RecentEdits.model_validate(response.json())

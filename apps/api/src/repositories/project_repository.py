@@ -25,3 +25,11 @@ class ProjectRepository:
             .order_by(Project.created_at.desc())
         )
         return list(self._db.execute(stmt).scalars().all())
+
+    def update_previs_customization(
+        self, project: Project, customization: dict[str, str]
+    ) -> Project:
+        project.previs_customization = customization
+        self._db.commit()
+        self._db.refresh(project)
+        return project

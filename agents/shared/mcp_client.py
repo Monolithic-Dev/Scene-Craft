@@ -91,6 +91,7 @@ async def update_job_status(
     frames_total: int | None = None,
     frames_completed: int | None = None,
     frames_failed: int | None = None,
+    deployed_app_url: str | None = None,
 ) -> dict[str, Any]:
     return await _call_tool(
         "update_job_status",
@@ -102,6 +103,7 @@ async def update_job_status(
             "frames_total": frames_total,
             "frames_completed": frames_completed,
             "frames_failed": frames_failed,
+            "deployed_app_url": deployed_app_url,
         },
     )
 
@@ -118,3 +120,35 @@ async def write_frame_record(
             "needs_review": needs_review,
         },
     )
+
+
+async def write_previs_customization(
+    project_id: str, title: str, accent_color: str, tone_note: str
+) -> dict[str, Any]:
+    return await _call_tool(
+        "write_previs_customization",
+        {
+            "project_id": project_id,
+            "title": title,
+            "accent_color": accent_color,
+            "tone_note": tone_note,
+        },
+    )
+
+
+async def write_shot_edit(
+    shot_id: str, field: str, new_value: str, requested_by: str
+) -> dict[str, Any]:
+    return await _call_tool(
+        "write_shot_edit",
+        {
+            "shot_id": shot_id,
+            "field": field,
+            "new_value": new_value,
+            "requested_by": requested_by,
+        },
+    )
+
+
+async def get_edit_history(project_id: str, limit: int = 10) -> dict[str, Any]:
+    return await _call_tool("get_edit_history", {"project_id": project_id, "limit": limit})

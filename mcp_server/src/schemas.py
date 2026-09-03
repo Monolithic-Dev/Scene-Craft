@@ -23,6 +23,11 @@ class FrameWriteResult(BaseModel):
     updated_at: datetime
 
 
+class ExistingShotFrame(BaseModel):
+    image_url: str
+    alt_text: str
+
+
 class SceneInput(BaseModel):
     scene_number: int
     heading: str
@@ -46,6 +51,7 @@ class ExistingShot(BaseModel):
     suggested_camera: str
     dialogue_snippet: str | None
     needs_review: bool
+    frame: ExistingShotFrame | None = None
 
 
 class ExistingScene(BaseModel):
@@ -56,15 +62,51 @@ class ExistingScene(BaseModel):
     shots: list[ExistingShot]
 
 
+class PrevisCustomization(BaseModel):
+    title: str
+    accent_color: str
+    tone_note: str
+
+
 class ProjectStateSnapshot(BaseModel):
     project_id: str
+    title: str
     script_id: str
     script_text: str
     style_reference: str | None
     existing_scenes: list[ExistingScene]
+    previs_customization: PrevisCustomization | None = None
 
 
 class JobStatusUpdate(BaseModel):
     job_id: str
     status: str
     updated_at: datetime
+
+
+class PrevisCustomizationWriteResult(BaseModel):
+    project_id: str
+    title: str
+    accent_color: str
+    tone_note: str
+
+
+class ShotEditWriteResult(BaseModel):
+    shot_id: str
+    edit_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class ShotEditSummary(BaseModel):
+    shot_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class RecentEdits(BaseModel):
+    edits: list[ShotEditSummary]

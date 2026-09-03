@@ -5,6 +5,7 @@ from src.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from src.models.project import Project
 from src.models.scene import Scene
 from src.models.script import Script
+from src.repositories.generation_job_repository import GenerationJobRepository
 from src.repositories.project_repository import ProjectRepository
 from src.repositories.scene_repository import SceneRepository
 from src.repositories.script_repository import ScriptRepository
@@ -19,6 +20,7 @@ class ProjectService:
         self._projects = ProjectRepository(db)
         self._scripts = ScriptRepository(db)
         self._scenes = SceneRepository(db)
+        self._jobs = GenerationJobRepository(db)
 
     def create_project(self, owner_id: str, title: str, style_reference: str | None) -> Project:
         return self._projects.create(
@@ -72,3 +74,13 @@ class ProjectService:
         if script is None:
             return []
         return self._scenes.list_for_script(script.id)
+
+    def get_deployed_app_url(self, project_id: str) -> str | None:
+        """None until some job's App-Build stage has ever completed — never
+        an error state, same convention as get_breakdown. Reflects the most
+        recent job that actually deployed, not just the most recent job
+        overall (a later iteration job stuck on needs_clarification or an
+        early failure must not make an already-live previs disappear).
+        """
+        job = self._jobs.get_latest_deployed_for_project(project_id)
+        return job.deployed_app_url if job is not None else None

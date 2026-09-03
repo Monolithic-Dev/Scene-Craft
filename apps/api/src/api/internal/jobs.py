@@ -20,6 +20,7 @@ def update_job_status(
         frames_total=payload.frames_total,
         frames_completed=payload.frames_completed,
         frames_failed=payload.frames_failed,
+        deployed_app_url=payload.deployed_app_url,
     )
     return JobStatusUpdateResponse(
         job_id=job.id,

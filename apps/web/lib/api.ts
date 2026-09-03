@@ -48,6 +48,64 @@ export interface Project {
   updated_at: string;
 }
 
+export interface ShotFrame {
+  id: string;
+  image_url: string;
+  alt_text: string;
+  generated_at: string;
+}
+
+export interface Shot {
+  id: string;
+  shot_number: number;
+  characters: string[];
+  location: string;
+  time_of_day: string;
+  action_summary: string;
+  suggested_camera: string;
+  dialogue_snippet: string | null;
+  needs_review: boolean;
+  frame: ShotFrame | null;
+}
+
+export interface Scene {
+  id: string;
+  scene_number: number;
+  heading: string;
+  time_of_day: string;
+  needs_review: boolean;
+  shots: Shot[];
+}
+
+export interface PrevisCustomization {
+  title: string;
+  accent_color: string;
+  tone_note: string;
+}
+
+export interface ProjectDetail extends Project {
+  scenes: Scene[];
+  deployed_app_url: string | null;
+  previs_customization: PrevisCustomization | null;
+}
+
+export interface JobStep {
+  agent: string;
+  status: string;
+  at: string | null;
+  completed: number | null;
+  total: number | null;
+  failed: number | null;
+}
+
+export interface Job {
+  id: string;
+  status: string;
+  steps: JobStep[];
+  deployed_app_url: string | null;
+  error_detail: string | null;
+}
+
 export const api = {
   signup: (email: string, password: string) =>
     request<{ id: string; email: string }>("/api/v1/auth/signup", {
@@ -72,9 +130,19 @@ export const api = {
   uploadScript: (projectId: string, file: File) => {
     const form = new FormData();
     form.append("file", file);
-    return request(`/api/v1/projects/${projectId}/scripts`, {
+    return request<{ id: string; job_id: string | null }>(`/api/v1/projects/${projectId}/scripts`, {
       method: "POST",
       body: form,
     });
   },
+
+  getProject: (projectId: string) => request<ProjectDetail>(`/api/v1/projects/${projectId}`),
+
+  getJob: (jobId: string) => request<Job>(`/api/v1/jobs/${jobId}`),
+
+  iterate: (projectId: string, iterationRequest: string) =>
+    request<{ job_id: string }>(`/api/v1/projects/${projectId}/iterate`, {
+      method: "POST",
+      body: JSON.stringify({ request: iterationRequest }),
+    }),
 };

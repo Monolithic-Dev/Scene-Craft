@@ -143,3 +143,115 @@ def test_write_frame_rejects_invalid_payload(client, auth_headers):
         headers=_HEADERS,
     )
     assert resp.status_code == 422
+
+
+def _user_id(auth_headers) -> str:
+    # requested_by has a real FK to users.id, so tests need an actual user
+    # id, not a placeholder string — decode it straight out of the bearer
+    # token rather than adding a /me endpoint just for this.
+    from src.core.security import decode_access_token
+
+    token = auth_headers["Authorization"].removeprefix("Bearer ")
+    return decode_access_token(token)
+
+
+def test_write_shot_edit_persists_new_value_and_audit_row(client, auth_headers):
+    project_id, shot_id = _create_project_with_one_shot(client, auth_headers)
+    resp = client.post(
+        f"/internal/v1/shots/{shot_id}/edit",
+        json={
+            "field": "time_of_day",
+            "new_value": "NIGHT",
+            "requested_by": _user_id(auth_headers),
+        },
+        headers=_HEADERS,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["shot_id"] == shot_id
+    assert body["field"] == "time_of_day"
+    assert body["old_value"] == "NIGHT"  # already NIGHT from the breakdown fixture
+    assert body["new_value"] == "NIGHT"
+
+    project = client.get(f"/api/v1/projects/{project_id}", headers=auth_headers).json()
+    assert project["scenes"][0]["shots"][0]["time_of_day"] == "NIGHT"
+
+
+def test_write_shot_edit_updates_action_summary(client, auth_headers):
+    _, shot_id = _create_project_with_one_shot(client, auth_headers)
+    resp = client.post(
+        f"/internal/v1/shots/{shot_id}/edit",
+        json={
+            "field": "action_summary",
+            "new_value": "Dana grips the rail, knuckles white.",
+            "requested_by": _user_id(auth_headers),
+        },
+        headers=_HEADERS,
+    )
+    assert resp.status_code == 200
+    assert resp.json()["old_value"] == "Dana stares at the water."
+
+
+def test_write_shot_edit_parses_characters_as_a_list(client, auth_headers):
+    project_id, shot_id = _create_project_with_one_shot(client, auth_headers)
+    resp = client.post(
+        f"/internal/v1/shots/{shot_id}/edit",
+        json={
+            "field": "characters",
+            "new_value": "DANA, RAMOS",
+            "requested_by": _user_id(auth_headers),
+        },
+        headers=_HEADERS,
+    )
+    assert resp.status_code == 200
+
+    project = client.get(f"/api/v1/projects/{project_id}", headers=auth_headers).json()
+    assert project["scenes"][0]["shots"][0]["characters"] == ["DANA", "RAMOS"]
+
+
+def test_write_shot_edit_rejects_non_editable_field(client, auth_headers):
+    _, shot_id = _create_project_with_one_shot(client, auth_headers)
+    resp = client.post(
+        f"/internal/v1/shots/{shot_id}/edit",
+        json={"field": "id", "new_value": "hacked", "requested_by": "u1"},
+        headers=_HEADERS,
+    )
+    assert resp.status_code == 400
+    assert resp.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+def test_write_shot_edit_rejects_unknown_shot(client, auth_headers):
+    resp = client.post(
+        "/internal/v1/shots/does-not-exist/edit",
+        json={"field": "location", "new_value": "Bridge", "requested_by": "u1"},
+        headers=_HEADERS,
+    )
+    assert resp.status_code == 404
+
+
+def test_get_edit_history_returns_recent_edits_newest_first(client, auth_headers):
+    project_id, shot_id = _create_project_with_one_shot(client, auth_headers)
+    user_id = _user_id(auth_headers)
+    client.post(
+        f"/internal/v1/shots/{shot_id}/edit",
+        json={"field": "location", "new_value": "Bridge", "requested_by": user_id},
+        headers=_HEADERS,
+    )
+    client.post(
+        f"/internal/v1/shots/{shot_id}/edit",
+        json={"field": "suggested_camera", "new_value": "close-up", "requested_by": user_id},
+        headers=_HEADERS,
+    )
+
+    resp = client.get(f"/internal/v1/projects/{project_id}/edit-history", headers=_HEADERS)
+    assert resp.status_code == 200
+    edits = resp.json()["edits"]
+    assert len(edits) == 2
+    assert edits[0]["field"] == "suggested_camera"  # most recent first
+    assert edits[1]["field"] == "location"
+
+
+def test_get_edit_history_empty_for_project_with_no_edits(client, auth_headers):
+    project_id, _ = _create_project_with_one_shot(client, auth_headers)
+    resp = client.get(f"/internal/v1/projects/{project_id}/edit-history", headers=_HEADERS)
+    assert resp.json()["edits"] == []

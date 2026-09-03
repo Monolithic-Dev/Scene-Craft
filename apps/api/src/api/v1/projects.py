@@ -35,6 +35,7 @@ def get_project(project_id: str, db: DbSession, current_user: CurrentUser) -> Pr
     service = ProjectService(db)
     project = service.get_owned_project(project_id, owner_id=current_user.id)
     scenes = service.get_breakdown(project_id)
+    deployed_app_url = service.get_deployed_app_url(project_id)
     # model_validate on a dict so ProjectResponse's ORM fields and the
     # scenes list (validated per-item via SceneResponse's from_attributes)
     # combine into one response without a second, duplicate schema.
@@ -46,5 +47,7 @@ def get_project(project_id: str, db: DbSession, current_user: CurrentUser) -> Pr
             "created_at": project.created_at,
             "updated_at": project.updated_at,
             "scenes": scenes,
+            "deployed_app_url": deployed_app_url,
+            "previs_customization": project.previs_customization,
         }
     )

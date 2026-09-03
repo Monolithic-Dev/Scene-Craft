@@ -22,6 +22,12 @@ class JobStatus(enum.StrEnum):
     RUNNING = "running"
     COMPLETE = "complete"
     FAILED_NEEDS_REVIEW = "failed_needs_review"
+    # Added in Phase 5 — the Iteration Agent's short-circuit when a request
+    # is ambiguous (PHASE-05-ITERATION-AND-TRACE-UI.md SS3 point 3: "do not
+    # apply a guessed change"). Distinct from FAILED_NEEDS_REVIEW: this is
+    # an expected, recoverable stop waiting on the user's next message, not
+    # a failure.
+    NEEDS_CLARIFICATION = "needs_clarification"
 
 
 class GenerationJob(Base):
