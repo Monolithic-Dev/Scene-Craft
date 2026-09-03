@@ -35,8 +35,12 @@ class Settings(BaseSettings):
     max_script_upload_bytes: int = 10 * 1024 * 1024  # 10 MB
     max_script_pages: int = 50
 
-    # Rate limiting
+    # Rate limiting — Redis (Cloud Memorystore in staging/prod, local
+    # docker-compose Redis in dev) backs a distributed limiter shared across
+    # all Cloud Run instances, replacing the Phase 1 in-process one (see
+    # core/rate_limiter.py).
     rate_limit_requests_per_minute: int = 60
+    redis_url: str = "redis://localhost:6379/0"
 
     # CORS
     allowed_origins: list[str] = ["http://localhost:3000"]
@@ -54,6 +58,13 @@ class Settings(BaseSettings):
     # just polling-speed rather than sub-second) rather than erroring, same
     # "stays honestly unconfigured" pattern as agents_python_executable.
     google_cloud_project: str = ""
+
+    # Pub/Sub job dispatch (Phase 6) — the production replacement for
+    # agent_runner.py's local subprocess.Popen spawn (see that module's
+    # docstring). Empty by default: agent_runner keeps spawning a local
+    # subprocess exactly as it did in Phases 2-5, same "stays honestly
+    # unconfigured" convention as google_cloud_project above.
+    pubsub_topic: str = ""
 
     @model_validator(mode="after")
     def _forbid_insecure_secrets_outside_dev(self) -> "Settings":

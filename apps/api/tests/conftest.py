@@ -1,5 +1,6 @@
 from unittest.mock import patch
 
+import fakeredis
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -7,7 +8,8 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from src.core.database import Base, get_db
-from src.main import _request_log, app
+from src.core.rate_limiter import RateLimiter
+from src.main import app
 
 
 @pytest.fixture(autouse=True)
@@ -32,11 +34,12 @@ def _never_spawn_real_agent_processes():
 
 @pytest.fixture()
 def client():
-    # The in-process rate limiter (main.py) keys on client host, which
-    # TestClient reports as a fixed value — without a reset here, every test
-    # in the session shares one bucket and later tests start failing with
-    # 429s once the cumulative request count crosses the per-minute limit.
-    _request_log.clear()
+    # The Redis-backed rate limiter (core/rate_limiter.py) keys on client
+    # host/user id, which TestClient reports as a fixed value per test run —
+    # without a fresh fakeredis instance per test, every test in the session
+    # would share one bucket and later tests would start failing with 429s
+    # once the cumulative request count crosses the per-minute limit.
+    app.state.rate_limiter = RateLimiter(client=fakeredis.FakeRedis())
 
     engine = create_engine(
         "sqlite:///:memory:",

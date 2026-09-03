@@ -19,6 +19,7 @@ from critic_agent.agent import run as run_critic
 from frame_agent.agent import run as run_frames
 from iteration_agent.agent import run as run_iteration_agent
 from shared.mcp_client import McpClientError, update_job_status
+from shared.telemetry import agent_span
 
 logger = logging.getLogger("scenecraft.orchestrator")
 logging.basicConfig(level=logging.INFO)
@@ -52,7 +53,8 @@ async def _run_app_build_and_critic(
     """
     try:
         await update_job_status(job_id, "running", stage="app_build")
-        app_build_result = await run_app_build(project_id, scoped_shot_ids=scoped_shot_ids)
+        async with agent_span("app_build", project_id=project_id, job_id=job_id):
+            app_build_result = await run_app_build(project_id, scoped_shot_ids=scoped_shot_ids)
     except Exception as exc:
         logger.exception("coordinator.app_build_failed", extra={"job_id": job_id})
         await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
@@ -65,7 +67,10 @@ async def _run_app_build_and_critic(
             stage="critic",
             deployed_app_url=app_build_result.deployed_app_url,
         )
-        verdict = await run_critic(project_id, scoped_shot_ids=scoped_shot_ids)
+        async with agent_span("critic", project_id=project_id, job_id=job_id) as span:
+            verdict = await run_critic(project_id, scoped_shot_ids=scoped_shot_ids)
+            if not verdict.passed:
+                span.set_attribute("status", "retry")
     except Exception as exc:
         logger.exception("coordinator.critic_failed", extra={"job_id": job_id})
         await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
@@ -79,8 +84,18 @@ async def _run_app_build_and_critic(
             extra={"job_id": job_id, "notes": verdict.notes},
         )
         try:
-            app_build_result = await run_app_build(project_id, scoped_shot_ids=scoped_shot_ids)
-            verdict = await run_critic(project_id, scoped_shot_ids=scoped_shot_ids)
+            async with agent_span(
+                "app_build", project_id=project_id, job_id=job_id, attempt=2
+            ):
+                app_build_result = await run_app_build(
+                    project_id, scoped_shot_ids=scoped_shot_ids
+                )
+            async with agent_span(
+                "critic", project_id=project_id, job_id=job_id, attempt=2
+            ) as span:
+                verdict = await run_critic(project_id, scoped_shot_ids=scoped_shot_ids)
+                if not verdict.passed:
+                    span.set_attribute("status", "failure")
         except Exception as exc:
             logger.exception("coordinator.app_build_retry_failed", extra={"job_id": job_id})
             await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
@@ -105,7 +120,8 @@ async def run_initial_generation(job_id: str, project_id: str) -> None:
         return
 
     try:
-        breakdown_result = await run_breakdown(project_id)
+        async with agent_span("breakdown", project_id=project_id, job_id=job_id):
+            breakdown_result = await run_breakdown(project_id)
     except Exception as exc:
         # Top-level stage boundary: every failure here must become
         # FAILED_NEEDS_REVIEW, not an uncaught exception that leaves the
@@ -126,12 +142,13 @@ async def run_initial_generation(job_id: str, project_id: str) -> None:
 
     try:
         await update_job_status(job_id, "running", stage="frames")
-        frame_result = await run_frames(
-            project_id,
-            on_progress=lambda completed, total, failed: _report_frame_progress(
-                job_id, completed, total, failed
-            ),
-        )
+        async with agent_span("frames", project_id=project_id, job_id=job_id):
+            frame_result = await run_frames(
+                project_id,
+                on_progress=lambda completed, total, failed: _report_frame_progress(
+                    job_id, completed, total, failed
+                ),
+            )
     except Exception as exc:
         logger.exception("coordinator.frame_generation_failed", extra={"job_id": job_id})
         await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
@@ -179,7 +196,8 @@ async def run_iteration(job_id: str, project_id: str, user_request: str, request
         return
 
     try:
-        iteration_result = await run_iteration_agent(project_id, user_request, requested_by)
+        async with agent_span("iteration", project_id=project_id, job_id=job_id):
+            iteration_result = await run_iteration_agent(project_id, user_request, requested_by)
     except Exception as exc:
         logger.exception("coordinator.iteration_failed", extra={"job_id": job_id})
         await update_job_status(job_id, "failed_needs_review", error_detail=str(exc))
