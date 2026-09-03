@@ -1,0 +1,174 @@
+name: Deploy
+
+# Runs after CI succeeds on main (never on a PR — a deploy is a
+# post-merge action, and secrets aren't exposed to pull_request-triggered
+# runs from forks anyway). Requires two repo secrets to do anything:
+# GCP_WORKLOAD_IDENTITY_PROVIDER and GCP_SERVICE_ACCOUNT (from
+# infra/terraform/wif.tf's outputs, once that Terraform has been applied
+# once by hand — see infra/README.md). Without them, every job below is
+# skipped with a clear reason rather than failing red.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.workflow }}
+  cancel-in-progress: false # never cancel a partway-through apply
+
+env:
+  TF_VERSION: "1.9.8"
+  REGION: us-central1
+  # Not a secret — the same value is already plain text in .firebaserc and
+  # every infra/terraform/*.tfvars file.
+  GCP_PROJECT_ID: scene-craft-507404
+
+jobs:
+  check-configured:
+    name: Check deploy secrets are configured
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'success'
+    outputs:
+      configured: ${{ steps.check.outputs.configured }}
+    steps:
+      - id: check
+        run: |
+          if [ -z "${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}" ] || [ -z "${{ secrets.GCP_SERVICE_ACCOUNT }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::GCP_WORKLOAD_IDENTITY_PROVIDER/GCP_SERVICE_ACCOUNT repo secrets are not set — deploy skipped. See infra/README.md for one-time WIF setup."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build-and-push:
+    name: Build & push images
+    needs: check-configured
+    if: needs.check-configured.outputs.configured == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: sha
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build & push api
+        run: |
+          docker build -f apps/api/Dockerfile -t ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/api:${{ steps.sha.outputs.sha }} apps/api
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/api:${{ steps.sha.outputs.sha }}
+
+      - name: Build & push web
+        run: |
+          docker build -f apps/web/Dockerfile -t ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/web:${{ steps.sha.outputs.sha }} apps/web
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/web:${{ steps.sha.outputs.sha }}
+
+      # Built from the repo root — mcp_server is installed into this same
+      # image (spawned over stdio inside the container) — see
+      # agents/Dockerfile's own header comment.
+      - name: Build & push agents
+        run: |
+          docker build -f agents/Dockerfile -t ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/agents:${{ steps.sha.outputs.sha }} .
+          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/agents:${{ steps.sha.outputs.sha }}
+
+  deploy-staging:
+    name: Deploy to staging
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: staging
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - run: terraform init
+
+      - name: Apply (staging)
+        run: |
+          terraform apply -auto-approve -var-file=staging.tfvars \
+            -var="container_image_tag=${{ needs.build-and-push.outputs.sha }}"
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+          TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY }}
+          TF_VAR_internal_service_key: ${{ secrets.TF_VAR_INTERNAL_SERVICE_KEY }}
+          TF_VAR_gemini_api_key: ${{ secrets.TF_VAR_GEMINI_API_KEY }}
+
+      - id: url
+        run: echo "api_url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test — /healthz
+        run: |
+          for i in 1 2 3 4 5; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.url.outputs.api_url }}/healthz")
+            [ "$code" = "200" ] && exit 0
+            sleep 10
+          done
+          echo "::error::staging /healthz never returned 200 after deploy"
+          exit 1
+
+  deploy-production:
+    name: Deploy to production
+    needs: [build-and-push, deploy-staging]
+    runs-on: ubuntu-latest
+    # GitHub Environments' own required-reviewers protection rule (set in
+    # repo Settings > Environments > production, not in this YAML) is the
+    # actual manual approval gate — this job simply won't start running
+    # until someone approves it there. Not bureaucracy for its own sake:
+    # it's the difference between a bad staging-passing merge breaking the
+    # live demo link five minutes before judging and catching it first.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: infra/terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - run: terraform init
+
+      - name: Apply (production)
+        run: |
+          terraform apply -auto-approve -var-file=prod.tfvars \
+            -var="container_image_tag=${{ needs.build-and-push.outputs.sha }}"
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD_PROD }}
+          TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY_PROD }}
+          TF_VAR_internal_service_key: ${{ secrets.TF_VAR_INTERNAL_SERVICE_KEY_PROD }}
+          TF_VAR_gemini_api_key: ${{ secrets.TF_VAR_GEMINI_API_KEY_PROD }}
