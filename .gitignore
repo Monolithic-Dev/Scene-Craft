@@ -42,6 +42,12 @@ yarn-error.log*
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+# dev/staging/prod.tfvars are committed deliberately — non-secret config
+# only (project_id, region, environment, ...); real secrets are supplied as
+# TF_VAR_* env vars, never written to a .tfvars file — see infra/README.md.
+!infra/terraform/dev.tfvars
+!infra/terraform/staging.tfvars
+!infra/terraform/prod.tfvars
 crash.log
 
 # --- Editors / OS -----------------------------------------------------------

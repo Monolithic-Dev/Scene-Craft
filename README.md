@@ -10,6 +10,8 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 
 **Phases 1-5 are complete and verified live end to end** — real script upload, breakdown, frame generation, self-hosted previs generation with Critic verification, and natural-language iteration with a live Firestore-backed trace panel, all exercised against real Gemini/Vertex AI and a real browser, no mocks. Known operational constraint worth flagging before any live demo: the `GEMINI_API_KEY`'s free tier caps `gemini-2.5-flash` at both 5 requests/minute *and* a 20-requests/day quota — a single day of active development/demo rehearsal can exhaust it (the app handles this correctly, as an honest `failed_needs_review`/`needs_clarification` state, but it's worth having a fallback key or upgraded quota before judging).
 
+**Phase 6's code and infrastructure-as-code are complete** (OpenTelemetry tracing, Redis-backed rate limiting, Pub/Sub job dispatch, structured logging, full Terraform for the production architecture, CI/CD deploy pipeline) but **not yet applied to a live environment** — `terraform plan` against the real GCP project is clean (72 resources, no errors), but `terraform apply` is a deliberate, separate step held off until closer to Phase 7 demo prep to avoid weeks of idle Cloud SQL/Memorystore billing. See `infra/README.md` for the full rationale, cost estimate, and what's needed to actually deploy.
+
 | Phase | Status |
 |---|---|
 | 1 — Foundations | ✅ Done |
@@ -17,7 +19,7 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 | 3 — Storyboard Frame Generation | ✅ Done |
 | 4 — App-Build & Critic Agents | ✅ Done |
 | 5 — Iteration Loop & Trace UI | ✅ Done |
-| 6 — Observability, Security, Deployment | Not started |
+| 6 — Observability, Security, Deployment | Code + Terraform done, not yet deployed |
 | 7 — Demo & Submission | Not started |
 
 ## Repository layout
@@ -28,7 +30,7 @@ apps/
   web/            Next.js frontend
 agents/           Agent orchestrator + per-agent implementations (breakdown, frame, app_build, critic, iteration — all live)
 mcp_server/       Internal MCP server exposing project-state tools to agents
-infra/            firestore/ (live — security rules for the trace mirror); terraform/ + docker/ land in Phase 6
+infra/            firestore/ (live), terraform/ (full IaC, validated but not yet applied — see infra/README.md), grafana/ (dashboard JSON)
 docs/             PRD, system design, agent architecture, phase-by-phase plan
 ```
 
@@ -134,9 +136,10 @@ cd apps/api    && ruff check . && mypy --strict src && pytest -v
 cd mcp_server  && ruff check . && mypy --strict src && pytest -v
 cd agents      && ruff check . && mypy --strict orchestrator breakdown_agent frame_agent app_build_agent critic_agent iteration_agent shared && pytest -v
 cd apps/web    && npm run typecheck && npm run build
+cd infra/terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same checks — lint, type-check, test, dependency audit, build — on every pull request, one job per package.
+CI (`.github/workflows/ci.yml`) runs the same checks — lint, type-check, test, dependency audit, build, `terraform fmt`/`validate` — on every pull request, one job per package. `.github/workflows/deploy.yml` additionally runs a `terraform plan` against the real project on every push to `main` once `GCP_WORKLOAD_IDENTITY_PROVIDER`/`GCP_SERVICE_ACCOUNT` repo secrets are configured (see `infra/README.md`), and applies to staging/production on the same trigger.
 
 ## What's implemented
 
@@ -149,6 +152,8 @@ CI (`.github/workflows/ci.yml`) runs the same checks — lint, type-check, test,
 **Phase 4** — The App-Build Agent generates the project's previs content itself rather than wrapping a Replit API (there is no such API for a normal account — see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0 for the full correction): a deterministic data layer read live from scenes/shots/frames, plus a single bounded, schema-validated Gemini call for presentation-only values (`accent_color`, `tone_note`) — never structure or content. The Critic Agent independently re-verifies shot-frame coverage and the customization schema before a job is marked complete, with one bounded retry on failure. The result renders at `apps/web`'s own `/projects/{id}/previs` route (scene navigator, shot cards, CSV export) — no separate deployment per project, since the page always reads live from the same tables. **Verified live end to end**, including through a real browser via Playwright.
 
 **Phase 5** — The Iteration Agent turns a director's free-text request into structured shot-field diffs (Gemini, schema-constrained), using the last 10 `ShotEdit` rows as memory for follow-up requests. An ambiguous request (e.g. "make it darker" with nothing to disambiguate against) gets a `needs_clarification` status and a real clarification question back — never a guessed change. A clear request is applied via a new `write_shot_edit` MCP tool (field-name validated against an allowlist independently of the prompt) and triggers a *scoped* App-Build/Critic pass — since Phase 4's design has no per-shot data file to regenerate, this skips the Gemini customization call entirely and only re-verifies the affected shot(s), making a single-field edit measurably faster than a full initial generation (live-measured: ~20s vs. ~90s). `generation_jobs` is mirrored into Firestore (`job_traces/{job_id}`) on every stage transition; the frontend subscribes directly via the Firebase Web SDK for a real push-based live trace panel (falls back to polling if Firestore isn't configured). Firestore access is a deliberate capability-URL tradeoff — public read scoped to exactly `job_traces/{jobId}` (an unguessable UUID never exposed except to the owning user), writes blocked for every client — see `infra/firestore/firestore.rules`. **Verified live end to end**, including through a real browser: a genuine live-push trace update, a completed edit, and a real ambiguous-request clarification, all against live Gemini — plus a real bug caught and fixed via that browser check (a later job that never reaches App-Build no longer hides an already-live previs link).
+
+**Phase 6** — OpenTelemetry spans wrap every agent invocation (`agent.<name>.run`, with `project_id`/`job_id`/`agent_name`/`status`/`duration_ms`), exported to Grafana Cloud when configured, else created locally with no export (never a hard dependency). The Phase 1 in-process rate limiter is replaced with a Redis-backed distributed one (fixed-window counter via atomic `INCR`, keyed by authenticated user id rather than IP), **live-verified against a real local Redis** — including finding and fixing a genuine redis-py 8.x RESP3 handshake incompatibility along the way. `agent_runner.py` gains a Pub/Sub publish path alongside its existing local subprocess spawn, activated by `PUBSUB_TOPIC`; the orchestrator gained a Cloud Run push-receiver entrypoint (`agents/orchestrator/pubsub_receiver.py`) alongside its existing CLI one. Structured JSON logging replaces plain-text logs. `infra/terraform/` provisions the full production architecture (3 Cloud Run services, Cloud SQL, Memorystore, Pub/Sub, Cloud Storage, Secret Manager, Artifact Registry, least-privilege IAM, optional Grafana Cloud dashboards) — `terraform plan` against the real GCP project produces a clean 72-resource plan, including a real bug (`for_each` over apply-time-unknown values) caught only by `plan`, not `validate`. The security review checklist (`docs/Phases/PHASE-06-SECURITY-REVIEW.md`) includes a live prompt-injection spot check against real Gemini and a captured structured-log line proving no secrets leak. **Not yet deployed** — see `infra/README.md` for why `terraform apply` is a deliberate, separately-triggered step.
 
 ## License
 
