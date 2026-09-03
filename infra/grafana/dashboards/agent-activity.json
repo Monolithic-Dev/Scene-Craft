@@ -1,0 +1,81 @@
+{
+  "title": "SceneCraft — Agent Activity",
+  "uid": "scenecraft-agent-activity",
+  "description": "The judge-facing panel — per-agent invocation count, success/failure/retry rate, average duration, and a live feed of recent agent.<name>.run spans. Keep this open during the demo, not just in a docs screenshot (PHASE-06-OBSERVABILITY-SECURITY-DEPLOYMENT.md SS2).",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Metrics source"
+      },
+      {
+        "name": "DS_TEMPO",
+        "type": "datasource",
+        "query": "tempo",
+        "label": "Traces source"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Invocation count by agent",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "sum by (agent_name) (rate(traces_spanmetrics_calls_total{span_name=~\"agent\\\\..*\\\\.run\"}[5m]))",
+          "legendFormat": "{{agent_name}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Success / failure / retry rate by agent",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "sum by (agent_name, status) (rate(traces_spanmetrics_calls_total{span_name=~\"agent\\\\..*\\\\.run\"}[5m]))",
+          "legendFormat": "{{agent_name}} — {{status}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Average duration by agent (ms)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "sum by (agent_name) (rate(traces_spanmetrics_latency_sum{span_name=~\"agent\\\\..*\\\\.run\"}[5m])) / sum by (agent_name) (rate(traces_spanmetrics_latency_count{span_name=~\"agent\\\\..*\\\\.run\"}[5m]))",
+          "legendFormat": "{{agent_name}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Live feed — recent agent.<name>.run spans",
+      "type": "table",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": "${DS_TEMPO}",
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ span.agent_name != \"\" }",
+          "limit": 50,
+          "tableType": "spans"
+        }
+      ]
+    }
+  ]
+}

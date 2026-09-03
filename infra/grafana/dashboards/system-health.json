@@ -1,0 +1,89 @@
+{
+  "title": "SceneCraft — System Health",
+  "uid": "scenecraft-system-health",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Metrics source"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate per Cloud Run service",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "sum by (service_name) (rate(run_googleapis_com_request_count[5m]))",
+          "legendFormat": "{{service_name}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "p50 / p95 request latency",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le, service_name) (rate(run_googleapis_com_request_latencies_bucket[5m])))",
+          "legendFormat": "p50 {{service_name}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(run_googleapis_com_request_latencies_bucket[5m])))",
+          "legendFormat": "p95 {{service_name}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "5xx error rate",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "sum by (service_name) (rate(run_googleapis_com_request_count{response_code_class=\"5xx\"}[5m]))",
+          "legendFormat": "{{service_name}}"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Cloud Run instance count (scale-to-zero visibility)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "sum by (service_name) (run_googleapis_com_container_instance_count)",
+          "legendFormat": "{{service_name}}"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Cloud SQL active connections",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "cloudsql_googleapis_com_database_postgresql_num_backends",
+          "legendFormat": "active connections"
+        }
+      ]
+    }
+  ]
+}

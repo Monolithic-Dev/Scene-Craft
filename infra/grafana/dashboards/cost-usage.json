@@ -1,0 +1,67 @@
+{
+  "title": "SceneCraft — Cost & Usage",
+  "uid": "scenecraft-cost-usage",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "5m",
+  "time": { "from": "now-7d", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "DS_PROMETHEUS",
+        "type": "datasource",
+        "query": "prometheus",
+        "label": "Metrics source"
+      },
+      {
+        "name": "DS_TEMPO",
+        "type": "datasource",
+        "query": "tempo",
+        "label": "Traces source"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Gemini/Vertex AI call volume by agent",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "description": "Derived from agent.<name>.run span counts as a proxy for model-call volume — see PHASE-06 SS1's note that token_usage/tool_calls_count aren't threaded through yet (a documented gap, not missing data here).",
+      "datasource": "${DS_TEMPO}",
+      "targets": [
+        {
+          "queryType": "traceql",
+          "query": "{ span.agent_name =~ \"breakdown|app_build|iteration\" } | count_over_time()"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Cloud Storage bucket size (frames)",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "storage_googleapis_com_storage_total_bytes",
+          "legendFormat": "bytes stored"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Cloud Run instance-hours by service (cost proxy)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+      "description": "Cloud Run bills by instance-time — a rising baseline here (rather than dropping to zero between demos) is the first signal min_instances_api got left >0 longer than intended.",
+      "datasource": "${DS_PROMETHEUS}",
+      "targets": [
+        {
+          "expr": "sum by (service_name) (run_googleapis_com_container_billable_instance_time)",
+          "legendFormat": "{{service_name}}"
+        }
+      ]
+    }
+  ]
+}
