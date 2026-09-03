@@ -18,11 +18,6 @@ output "cloud_sql_connection_name" {
   description = "For connecting via the Cloud SQL Auth Proxy from outside Cloud Run (e.g. a one-off `gcloud sql connect` for debugging)."
 }
 
-output "redis_host" {
-  value       = google_redis_instance.cache.host
-  description = "Only reachable from inside the VPC (network.tf) — not a public endpoint."
-}
-
 output "artifact_registry_repository" {
   value       = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}"
   description = "Push images here as api:<sha>, web:<sha>, agents:<sha> — see .github/workflows/deploy.yml."

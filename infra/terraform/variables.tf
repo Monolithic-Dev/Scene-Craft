@@ -27,7 +27,21 @@ variable "github_repository" {
 variable "container_image_tag" {
   type        = string
   default     = "latest"
-  description = "Git SHA (preferred) or tag identifying which Artifact Registry image to deploy for api/web/agents — set by deploy.yml per build."
+  description = "Git SHA (preferred) or tag identifying which Artifact Registry image to deploy for api/agents — set by deploy.yml per build. Built once and shared across environments, since neither service bakes environment-specific values in at build time."
+}
+
+variable "web_image_tag" {
+  type        = string
+  default     = "latest"
+  description = <<-EOT
+    Separate from container_image_tag on purpose: Next.js inlines
+    NEXT_PUBLIC_* values (API URL, Firebase config) into the JS bundle at
+    build time (see apps/web/Dockerfile), so a single web image cannot be
+    correct for both staging and production — each environment needs its
+    own build with its own baked-in API URL. deploy.yml builds and tags a
+    web image per environment (e.g. "<sha>-staging", "<sha>-prod") and
+    passes the matching tag here.
+  EOT
 }
 
 variable "web_allowed_origin" {
@@ -72,6 +86,18 @@ variable "internal_service_key" {
 }
 
 variable "gemini_api_key" {
+  type      = string
+  sensitive = true
+}
+
+# Full redis:// connection string from a free external provider (Upstash —
+# see infra/README.md) rather than Cloud Memorystore: Memorystore's cheapest
+# tier still bills ~$35/mo continuously, and is VPC-only (which is what
+# network.tf/redis.tf existed for before this swap) — a free managed Redis
+# with a public TLS endpoint needs no VPC at all, since Cloud Run reaches it
+# directly over the internet like it already does for Gemini/Cloud SQL's
+# Auth Proxy.
+variable "redis_url" {
   type      = string
   sensitive = true
 }

@@ -45,7 +45,10 @@ resource "google_pubsub_topic" "jobs_dead_letter" {
 # invoke this Cloud Run service" narrowly to Pub/Sub's push mechanism
 # without widening the Agents SA's own permissions.
 resource "google_service_account" "pubsub_invoker" {
-  account_id   = "${local.name_prefix}-pubsub-invoker"
+  # Service account IDs cap at 30 chars — "scenecraft-<env>-pubsub-invoker"
+  # overflows that for "staging"/"production", so this one drops the
+  # "scenecraft-" prefix the rest of this file's names use.
+  account_id   = "${var.environment}-pubsub-invoker"
   display_name = "Pub/Sub push invoker for SceneCraft Agent Workers (${var.environment})"
 }
 
@@ -56,18 +59,31 @@ resource "google_cloud_run_v2_service_iam_member" "pubsub_invokes_agents" {
   member   = "serviceAccount:${google_service_account.pubsub_invoker.email}"
 }
 
+# Pub/Sub's own Google-managed service agent doesn't exist in a project
+# until something explicitly provisions it — granting it IAM roles before
+# that (as the two bindings below do) fails with "Service account ...
+# does not exist", found live on a real from-scratch apply. This resource
+# is the explicit provisioning step.
+resource "google_project_service_identity" "pubsub" {
+  provider = google-beta
+  project  = var.project_id
+  service  = "pubsub.googleapis.com"
+}
+
 resource "google_pubsub_topic_iam_member" "dead_letter_publish" {
   topic = google_pubsub_topic.jobs_dead_letter.name
   role  = "roles/pubsub.publisher"
   # Pub/Sub's own service agent republishes to the dead-letter topic, not
   # any of our application service accounts.
-  member = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+  member     = "serviceAccount:${google_project_service_identity.pubsub.email}"
+  depends_on = [google_project_service_identity.pubsub]
 }
 
 resource "google_pubsub_subscription_iam_member" "dead_letter_subscribe" {
   subscription = google_pubsub_subscription.jobs_push.name
   role         = "roles/pubsub.subscriber"
-  member       = "serviceAccount:service-${data.google_project.current.number}@gcp-sa-pubsub.iam.gserviceaccount.com"
+  member       = "serviceAccount:${google_project_service_identity.pubsub.email}"
+  depends_on   = [google_project_service_identity.pubsub]
 }
 
 data "google_project" "current" {

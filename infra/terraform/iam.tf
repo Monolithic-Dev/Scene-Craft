@@ -62,6 +62,12 @@ resource "google_secret_manager_secret_iam_member" "api_reads_database_url" {
   member    = "serviceAccount:${google_service_account.api.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "api_reads_redis_url" {
+  secret_id = google_secret_manager_secret.redis_url.secret_id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.api.email}"
+}
+
 # Publishes exactly one topic (job dispatch, replacing the local subprocess
 # spawn — agent_runner.py) — not project-wide Pub/Sub Editor.
 resource "google_pubsub_topic_iam_member" "api_publishes_jobs" {

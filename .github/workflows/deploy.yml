@@ -23,6 +23,18 @@ env:
   # Not a secret — the same value is already plain text in .firebaserc and
   # every infra/terraform/*.tfvars file.
   GCP_PROJECT_ID: scene-craft-507404
+  # Not secrets either — see apps/web/lib/firebase.ts for why (apiKey
+  # identifies the project, doesn't authorize anything; real access
+  # control is infra/firestore/firestore.rules). One Firebase project is
+  # shared across staging/production on purpose — this is a hackathon-
+  # scale system, not a case where per-environment Firebase projects would
+  # earn their operational overhead.
+  NEXT_PUBLIC_FIREBASE_API_KEY: AIzaSyCMSusuk0ROHrCkuABdtkGwRr9xuijYAHQ
+  NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: scene-craft-507404.firebaseapp.com
+  NEXT_PUBLIC_FIREBASE_PROJECT_ID: scene-craft-507404
+  NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: scene-craft-507404.firebasestorage.app
+  NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: "1056738033513"
+  NEXT_PUBLIC_FIREBASE_APP_ID: "1:1056738033513:web:7d669f70c9da32289b07f8"
 
 jobs:
   check-configured:
@@ -41,8 +53,17 @@ jobs:
             echo "configured=true" >> "$GITHUB_OUTPUT"
           fi
 
+  # api and agents are safe to build once and share across staging and
+  # production — neither bakes environment-specific values in at build
+  # time (they read config from runtime env vars / Secret Manager). web is
+  # deliberately NOT built here — see deploy-staging/deploy-production's
+  # own "Build & push web" step and web_image_tag's description in
+  # infra/terraform/variables.tf for why it needs a separate build per
+  # environment (Next.js inlines NEXT_PUBLIC_* values, API URL included,
+  # into the JS bundle at build time — a single web image cannot be
+  # correct for two environments with two different API URLs).
   build-and-push:
-    name: Build & push images
+    name: Build & push api/agents images
     needs: check-configured
     if: needs.check-configured.outputs.configured == 'true'
     runs-on: ubuntu-latest
@@ -71,11 +92,6 @@ jobs:
           docker build -f apps/api/Dockerfile -t ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/api:${{ steps.sha.outputs.sha }} apps/api
           docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/api:${{ steps.sha.outputs.sha }}
 
-      - name: Build & push web
-        run: |
-          docker build -f apps/web/Dockerfile -t ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/web:${{ steps.sha.outputs.sha }} apps/web
-          docker push ${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/web:${{ steps.sha.outputs.sha }}
-
       # Built from the repo root — mcp_server is installed into this same
       # image (spawned over stdio inside the container) — see
       # agents/Dockerfile's own header comment.
@@ -103,29 +119,72 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
       - run: terraform init
 
-      - name: Apply (staging)
+      # Phase 1: api + agents only, so api's URL exists and is stable
+      # before web is built — a genuine dependency (web's build needs to
+      # know api's URL), not just an ordering preference. Cloud Run v2
+      # URLs are deterministic per project+service+region and don't change
+      # across ordinary re-deploys, so this is safe to run every time even
+      # though api's URL was already known after the very first apply.
+      - name: Apply (staging) — api + agents
         run: |
           terraform apply -auto-approve -var-file=staging.tfvars \
+            -target=google_cloud_run_v2_service.api \
+            -target=google_cloud_run_v2_service.agents \
             -var="container_image_tag=${{ needs.build-and-push.outputs.sha }}"
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
           TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY }}
           TF_VAR_internal_service_key: ${{ secrets.TF_VAR_INTERNAL_SERVICE_KEY }}
           TF_VAR_gemini_api_key: ${{ secrets.TF_VAR_GEMINI_API_KEY }}
+          TF_VAR_redis_url: ${{ secrets.TF_VAR_REDIS_URL }}
 
-      - id: url
-        run: echo "api_url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
+      - id: api_url
+        run: echo "url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push web
+        working-directory: apps/web
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/web:${{ needs.build-and-push.outputs.sha }}-staging"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="${{ steps.api_url.outputs.url }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="${{ env.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="${{ env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="${{ env.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="${{ env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${{ env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${{ env.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
+            -t "$IMAGE" -f Dockerfile .
+          docker push "$IMAGE"
+
+      # Phase 2: everything else, including web (now that its image
+      # exists) and web_allowed_origin (CORS — see staging.tfvars, already
+      # pinned to the real stable web URL so this doesn't regress CORS
+      # back to the http://localhost:3000 default on every deploy).
+      - name: Apply (staging) — everything else
+        run: |
+          terraform apply -auto-approve -var-file=staging.tfvars \
+            -var="container_image_tag=${{ needs.build-and-push.outputs.sha }}" \
+            -var="web_image_tag=${{ needs.build-and-push.outputs.sha }}-staging"
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD }}
+          TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY }}
+          TF_VAR_internal_service_key: ${{ secrets.TF_VAR_INTERNAL_SERVICE_KEY }}
+          TF_VAR_gemini_api_key: ${{ secrets.TF_VAR_GEMINI_API_KEY }}
+          TF_VAR_redis_url: ${{ secrets.TF_VAR_REDIS_URL }}
 
       - name: Smoke test — /healthz
         run: |
           for i in 1 2 3 4 5; do
-            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.url.outputs.api_url }}/healthz")
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ steps.api_url.outputs.url }}/healthz")
             [ "$code" = "200" ] && exit 0
             sleep 10
           done
@@ -157,18 +216,58 @@ jobs:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
       - run: terraform init
 
-      - name: Apply (production)
+      # Same two-phase structure as deploy-staging — see that job's
+      # comments for why. prod.tfvars needs its own web_allowed_origin set
+      # once prod's web URL is known, the same one-time bootstrap this
+      # repo's staging.tfvars already went through — see infra/README.md.
+      - name: Apply (production) — api + agents
         run: |
           terraform apply -auto-approve -var-file=prod.tfvars \
+            -target=google_cloud_run_v2_service.api \
+            -target=google_cloud_run_v2_service.agents \
             -var="container_image_tag=${{ needs.build-and-push.outputs.sha }}"
         env:
           TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD_PROD }}
           TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY_PROD }}
           TF_VAR_internal_service_key: ${{ secrets.TF_VAR_INTERNAL_SERVICE_KEY_PROD }}
           TF_VAR_gemini_api_key: ${{ secrets.TF_VAR_GEMINI_API_KEY_PROD }}
+          TF_VAR_redis_url: ${{ secrets.TF_VAR_REDIS_URL_PROD }}
+
+      - id: api_url
+        run: echo "url=$(terraform output -raw api_url)" >> "$GITHUB_OUTPUT"
+
+      - name: Build & push web
+        working-directory: apps/web
+        run: |
+          IMAGE="${{ env.REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/scenecraft/web:${{ needs.build-and-push.outputs.sha }}-prod"
+          docker build \
+            --build-arg NEXT_PUBLIC_API_BASE_URL="${{ steps.api_url.outputs.url }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_API_KEY="${{ env.NEXT_PUBLIC_FIREBASE_API_KEY }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN="${{ env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_PROJECT_ID="${{ env.NEXT_PUBLIC_FIREBASE_PROJECT_ID }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET="${{ env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID="${{ env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}" \
+            --build-arg NEXT_PUBLIC_FIREBASE_APP_ID="${{ env.NEXT_PUBLIC_FIREBASE_APP_ID }}" \
+            -t "$IMAGE" -f Dockerfile .
+          docker push "$IMAGE"
+
+      - name: Apply (production) — everything else
+        run: |
+          terraform apply -auto-approve -var-file=prod.tfvars \
+            -var="container_image_tag=${{ needs.build-and-push.outputs.sha }}" \
+            -var="web_image_tag=${{ needs.build-and-push.outputs.sha }}-prod"
+        env:
+          TF_VAR_db_password: ${{ secrets.TF_VAR_DB_PASSWORD_PROD }}
+          TF_VAR_jwt_secret_key: ${{ secrets.TF_VAR_JWT_SECRET_KEY_PROD }}
+          TF_VAR_internal_service_key: ${{ secrets.TF_VAR_INTERNAL_SERVICE_KEY_PROD }}
+          TF_VAR_gemini_api_key: ${{ secrets.TF_VAR_GEMINI_API_KEY_PROD }}
+          TF_VAR_redis_url: ${{ secrets.TF_VAR_REDIS_URL_PROD }}

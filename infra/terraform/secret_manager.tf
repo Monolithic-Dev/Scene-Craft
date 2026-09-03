@@ -47,6 +47,22 @@ resource "google_secret_manager_secret_version" "gemini_api_key" {
   secret_data = var.gemini_api_key
 }
 
+# Full rediss:// connection string (includes the Upstash access token) —
+# see variables.tf's redis_url for why this is an external free Redis
+# rather than Cloud Memorystore.
+resource "google_secret_manager_secret" "redis_url" {
+  secret_id = "${local.name_prefix}-redis-url"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret_version" "redis_url" {
+  secret      = google_secret_manager_secret.redis_url.id
+  secret_data = var.redis_url
+}
+
 # The full connection string (not just the raw password) is the secret —
 # Cloud Run's env model is one value per var, so DATABASE_URL has to be
 # assembled once here rather than templated from a separate password env

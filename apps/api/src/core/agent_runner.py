@@ -30,8 +30,24 @@ from src.core.config import get_settings
 
 logger = logging.getLogger("scenecraft.api")
 
-# repo_root/agents — apps/api/src/core/agent_runner.py -> parents[4] is repo root.
-_DEFAULT_AGENTS_DIR = Path(__file__).resolve().parents[4] / "agents"
+def _default_agents_dir() -> str | None:
+    """repo_root/agents — apps/api/src/core/agent_runner.py -> parents[4] is
+    repo root, in the local dev checkout. Deliberately lazy (a function,
+    not a module-level constant): the deployed container's flattened
+    layout (see apps/api/Dockerfile's `COPY src ./src`, WORKDIR /app) only
+    nests 3 levels deep, not 4 — computing this eagerly at import time
+    crashed the entire app on Cloud Run startup with an uncaught
+    IndexError, found live, the hard way, even though the deployed path
+    (settings.pubsub_topic set) never actually reaches this function at
+    all. Returns None rather than raising when the tree isn't deep enough
+    — callers already treat that as "no default available", same as an
+    unset agents_working_dir.
+    """
+    try:
+        return str(Path(__file__).resolve().parents[4] / "agents")
+    except IndexError:
+        return None
+
 
 PopenFactory = Callable[..., subprocess.Popen[bytes]]
 PublisherFactory = Callable[[], Any]
@@ -94,7 +110,7 @@ def trigger_initial_generation_job(
         )
         return False
 
-    agents_dir = settings.agents_working_dir or str(_DEFAULT_AGENTS_DIR)
+    agents_dir = settings.agents_working_dir or _default_agents_dir()
     try:
         popen(
             [python_executable, "-m", "orchestrator.coordinator", job_id, project_id],
@@ -146,7 +162,7 @@ def trigger_iteration_job(
         )
         return False
 
-    agents_dir = settings.agents_working_dir or str(_DEFAULT_AGENTS_DIR)
+    agents_dir = settings.agents_working_dir or _default_agents_dir()
     try:
         popen(
             [
