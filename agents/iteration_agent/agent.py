@@ -11,6 +11,7 @@ Flow (PHASE-05-ITERATION-AND-TRACE-UI.md SS3):
    depth beyond the prompt's own constraint — Common Pitfall #2) and apply
    the valid ones via write_shot_edit.
 """
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,6 +19,8 @@ from iteration_agent.prompts import build_iteration_prompt
 from iteration_agent.schema import IterationOutput
 from shared.gemini_client import GeminiClientError, generate_json
 from shared.mcp_client import get_edit_history, get_project_state, write_shot_edit
+
+logger = logging.getLogger("scenecraft.iteration_agent")
 
 EDITABLE_FIELDS = {"location", "time_of_day", "action_summary", "suggested_camera", "characters"}
 
@@ -59,9 +62,16 @@ async def run(project_id: str, user_request: str, requested_by: str) -> Iteratio
     except (GeminiClientError, ValueError) as exc:
         # An extraction failure is treated the same as "ambiguous" — never
         # apply a guessed change just because the model call itself broke.
+        logger.warning(
+            "iteration_agent.extraction_failed", extra={"project_id": project_id, "error": str(exc)}
+        )
         return IterationResult(clarification_needed=f"Couldn't interpret that request: {exc}")
 
     if output.clarification_needed:
+        logger.info(
+            "iteration_agent.clarification_needed",
+            extra={"project_id": project_id, "question": output.clarification_needed},
+        )
         return IterationResult(clarification_needed=output.clarification_needed)
 
     affected_shot_ids: list[str] = []
@@ -82,6 +92,10 @@ async def run(project_id: str, user_request: str, requested_by: str) -> Iteratio
             f"Model proposed only invalid fields: {', '.join(invalid_fields_skipped)}"
         )
 
+    logger.info(
+        "iteration_agent.applied_edits",
+        extra={"project_id": project_id, "affected_shot_ids": affected_shot_ids},
+    )
     return IterationResult(
         affected_shot_ids=affected_shot_ids, invalid_fields_skipped=invalid_fields_skipped
     )

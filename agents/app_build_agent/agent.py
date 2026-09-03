@@ -22,11 +22,14 @@ it" — accent_color/tone_note are project-level and a single-shot content
 edit has no reason to change them. This is what makes a scoped run
 measurably faster than a full initial generation.
 """
+import logging
 from dataclasses import dataclass
 
 from app_build_agent.customization import generate_customization
 from app_build_agent.spec_builder import summarize
 from shared.mcp_client import get_project_state, write_previs_customization
+
+logger = logging.getLogger("scenecraft.app_build_agent")
 
 
 @dataclass
@@ -38,6 +41,10 @@ class AppBuildResult:
 
 async def run(project_id: str, *, scoped_shot_ids: list[str] | None = None) -> AppBuildResult:
     if scoped_shot_ids is not None:
+        logger.info(
+            "app_build_agent.scoped_run_skips_customization",
+            extra={"project_id": project_id, "scoped_shot_ids": scoped_shot_ids},
+        )
         return AppBuildResult(
             deployed_app_url=f"/projects/{project_id}/previs",
             used_fallback_customization=False,
@@ -53,6 +60,10 @@ async def run(project_id: str, *, scoped_shot_ids: list[str] | None = None) -> A
         summary.title,
         customization.accent_color,
         customization.tone_note,
+    )
+    logger.info(
+        "app_build_agent.customization_written",
+        extra={"project_id": project_id, "used_fallback": customization.used_fallback},
     )
 
     return AppBuildResult(
