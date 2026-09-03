@@ -14,10 +14,12 @@ from mcp.server.fastmcp import FastMCP
 
 from src.api_client import (
     ApiClientError,
+    get_edit_history,
     get_project_state,
     update_job_status,
     write_frame_record,
     write_previs_customization,
+    write_shot_edit,
     write_shot_records,
 )
 from src.schemas import (
@@ -25,7 +27,9 @@ from src.schemas import (
     JobStatusUpdate,
     PrevisCustomizationWriteResult,
     ProjectStateSnapshot,
+    RecentEdits,
     SceneInput,
+    ShotEditWriteResult,
     WriteResult,
 )
 
@@ -119,6 +123,33 @@ def write_previs_customization_tool(
     """
     try:
         return write_previs_customization(project_id, title, accent_color, tone_note)
+    except ApiClientError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool(name="write_shot_edit")
+def write_shot_edit_tool(
+    shot_id: str, field: str, new_value: str, requested_by: str
+) -> ShotEditWriteResult:
+    """The Iteration Agent's only path to apply a diff — apps/api rejects
+    any field outside its EDITABLE_FIELDS allowlist (defense in depth beyond
+    the prompt's own constraint). See PHASE-05-ITERATION-AND-TRACE-UI.md
+    SS3 point 4.
+    """
+    try:
+        return write_shot_edit(shot_id, field, new_value, requested_by)
+    except ApiClientError as exc:
+        raise ValueError(str(exc)) from exc
+
+
+@mcp.tool(name="get_edit_history")
+def get_edit_history_tool(project_id: str, limit: int = 10) -> RecentEdits:
+    """The Iteration Agent's memory source — the last `limit` edits across
+    the project, newest first, per PHASE-05-ITERATION-AND-TRACE-UI.md SS3
+    point 1 ("also revert the earlier lighting change" resolves via this).
+    """
+    try:
+        return get_edit_history(project_id, limit=limit)
     except ApiClientError as exc:
         raise ValueError(str(exc)) from exc
 

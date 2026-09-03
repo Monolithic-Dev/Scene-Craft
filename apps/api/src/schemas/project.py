@@ -46,3 +46,11 @@ class ProjectDetailResponse(ProjectResponse):
     # Project itself.
     deployed_app_url: str | None = None
     previs_customization: PrevisCustomizationResponse | None = None
+
+
+class IterateRequest(BaseModel):
+    request: str = Field(min_length=1, max_length=2000)
+
+
+class IterateResponse(BaseModel):
+    job_id: str

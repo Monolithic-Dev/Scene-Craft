@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// job_traces/{jobId} is a live, ephemeral mirror of generation_jobs
+// (PHASE-05-ITERATION-AND-TRACE-UI.md SS2) — Cloud SQL stays the durable,
+// authoritative, access-controlled system of record; this is a read-only
+// cache the frontend subscribes to directly for the live agent-trace panel.
+//
+// Deliberately public read, scoped to exactly this one collection:
+// - jobId is an unguessable UUID, never exposed except to the job's owner
+//   via the authenticated REST API (GET /api/v1/jobs/{id}) that created it.
+// - Trace documents contain only agent step names/statuses/timestamps — no
+//   script text, no user PII, nothing sensitive.
+// - Writes are apps/api's Admin SDK only (bypasses these rules entirely) —
+//   `allow write: if false` blocks every client-side write attempt.
+// A capability-URL tradeoff, not an oversight — see apps/api/src/core/
+// firestore_client.py for the write side.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /job_traces/{jobId} {
+      allow read: if true;
+      allow write: if false;
+    }
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

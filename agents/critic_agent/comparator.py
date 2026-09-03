@@ -8,15 +8,25 @@ from typing import Any
 _HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 
-def check_shot_coverage(state: dict[str, Any]) -> list[str]:
+def check_shot_coverage(
+    state: dict[str, Any], *, scoped_shot_ids: list[str] | None = None
+) -> list[str]:
     """Shot ids with no ShotFrame record at all — not the placeholder path
     (Phase 3 always writes a placeholder on persistent Imagen failure, which
     is a legitimate, already-flagged outcome), only a genuine gap where no
     frame was ever written for a shot.
+
+    scoped_shot_ids (Phase 5, PHASE-05-ITERATION-AND-TRACE-UI.md SS4): for
+    an iteration job, only the shots the edit actually touched need
+    re-verifying — checking the whole project on every single-field edit
+    doesn't scale and isn't necessary, since nothing about an unrelated
+    shot could have changed.
     """
     missing: list[str] = []
     for scene in state.get("existing_scenes", []):
         for shot in scene.get("shots", []):
+            if scoped_shot_ids is not None and shot["id"] not in scoped_shot_ids:
+                continue
             if shot.get("frame") is None:
                 missing.append(shot["id"])
     return missing

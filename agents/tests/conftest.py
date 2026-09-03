@@ -17,6 +17,7 @@ class FakeMcp:
         style_reference: str | None = None,
         existing_scenes: list[dict] | None = None,
         previs_customization: dict | None = None,
+        edit_history: list[dict] | None = None,
     ) -> None:
         self.script_text = script_text
         self.script_id = script_id
@@ -25,9 +26,11 @@ class FakeMcp:
         self.style_reference = style_reference
         self.existing_scenes = existing_scenes or []
         self.previs_customization = previs_customization
+        self.edit_history = edit_history or []
         self.written_scenes: list[dict] = []
         self.written_frames: list[dict] = []
         self.written_customizations: list[dict] = []
+        self.written_edits: list[dict] = []
         # Each entry is a dict so callers can add keyword-only progress
         # fields without every existing assertion needing a wider tuple.
         self.job_statuses: list[dict] = []
@@ -111,6 +114,30 @@ class FakeMcp:
             "tone_note": tone_note,
         }
         return {"project_id": project_id, "title": title}
+
+    async def write_shot_edit(
+        self, shot_id: str, field: str, new_value: str, requested_by: str
+    ) -> dict:
+        self.written_edits.append(
+            {
+                "shot_id": shot_id,
+                "field": field,
+                "new_value": new_value,
+                "requested_by": requested_by,
+            }
+        )
+        return {
+            "shot_id": shot_id,
+            "edit_id": f"edit-{len(self.written_edits)}",
+            "field": field,
+            "old_value": None,
+            "new_value": new_value,
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+
+    async def get_edit_history(self, project_id: str, limit: int = 10) -> dict:
+        assert project_id == self.project_id
+        return {"edits": self.edit_history[:limit]}
 
 
 @pytest.fixture

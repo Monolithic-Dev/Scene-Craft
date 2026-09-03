@@ -139,4 +139,10 @@ export const api = {
   getProject: (projectId: string) => request<ProjectDetail>(`/api/v1/projects/${projectId}`),
 
   getJob: (jobId: string) => request<Job>(`/api/v1/jobs/${jobId}`),
+
+  iterate: (projectId: string, iterationRequest: string) =>
+    request<{ job_id: string }>(`/api/v1/projects/${projectId}/iterate`, {
+      method: "POST",
+      body: JSON.stringify({ request: iterationRequest }),
+    }),
 };

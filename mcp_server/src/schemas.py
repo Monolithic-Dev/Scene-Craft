@@ -89,3 +89,24 @@ class PrevisCustomizationWriteResult(BaseModel):
     title: str
     accent_color: str
     tone_note: str
+
+
+class ShotEditWriteResult(BaseModel):
+    shot_id: str
+    edit_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class ShotEditSummary(BaseModel):
+    shot_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class RecentEdits(BaseModel):
+    edits: list[ShotEditSummary]

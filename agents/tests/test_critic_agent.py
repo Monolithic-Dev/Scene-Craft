@@ -47,6 +47,22 @@ def test_check_shot_coverage_reports_missing_frames():
     assert check_shot_coverage(state) == ["shot-2"]
 
 
+def test_check_shot_coverage_scoped_ignores_shots_outside_the_scope():
+    """PHASE-05-ITERATION-AND-TRACE-UI.md SS4: an iteration only re-verifies
+    the shots it actually touched — an unrelated shot missing a frame
+    (pre-existing, unrelated to this edit) must not block it.
+    """
+    shots = [_shot_with_frame("shot-1"), _shot_without_frame("shot-2")]
+    state = {"existing_scenes": [{"shots": shots}]}
+    assert check_shot_coverage(state, scoped_shot_ids=["shot-1"]) == []
+
+
+def test_check_shot_coverage_scoped_still_reports_missing_shots_in_scope():
+    shots = [_shot_without_frame("shot-1"), _shot_without_frame("shot-2")]
+    state = {"existing_scenes": [{"shots": shots}]}
+    assert check_shot_coverage(state, scoped_shot_ids=["shot-1"]) == ["shot-1"]
+
+
 def test_validate_customization_passes_on_well_formed_input():
     assert validate_customization(_VALID_CUSTOMIZATION) == []
 
@@ -109,3 +125,17 @@ async def test_critic_detects_missing_customization():
 
     assert verdict.passed is False
     assert verdict.schema_errors == ["previs_customization is missing"]
+
+
+async def test_critic_scoped_run_ignores_unrelated_missing_frames():
+    fake_mcp = FakeMcp(
+        script_text="",
+        existing_scenes=[
+            {"shots": [_shot_with_frame("shot-1"), _shot_without_frame("shot-2")]}
+        ],
+        previs_customization=_VALID_CUSTOMIZATION,
+    )
+    with patch("critic_agent.agent.get_project_state", fake_mcp.get_project_state):
+        verdict = await run("proj-1", scoped_shot_ids=["shot-1"])
+
+    assert verdict.passed is True

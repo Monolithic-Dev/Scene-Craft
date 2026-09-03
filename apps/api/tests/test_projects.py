@@ -99,3 +99,52 @@ def test_get_project_reflects_deployed_app_url_from_latest_job(client, auth_head
         "accent_color": "#ff6a00",
         "tone_note": "Tense, nocturnal",
     }
+
+
+def test_deployed_app_url_survives_a_later_job_that_never_deploys(client, auth_headers):
+    """Regression test — caught via a real live-browser check: a later
+    iteration job that stops at needs_clarification (or fails before
+    app_build) has its own deployed_app_url column at None. GET /projects/{id}
+    must still surface the previous job's already-live previs, not lose it
+    just because the newest job never got that far.
+    """
+    import io
+
+    from src.core.config import get_settings
+
+    settings = get_settings()
+    internal_headers = {"X-Internal-Service-Key": settings.internal_service_key}
+
+    project = client.post(
+        "/api/v1/projects", json={"title": "Midnight Ferry"}, headers=auth_headers
+    ).json()
+    file_content = io.BytesIO(b"INT. FERRY - NIGHT\n\nDana waits.")
+    script = client.post(
+        f"/api/v1/projects/{project['id']}/scripts",
+        files={"file": ("script.txt", file_content, "text/plain")},
+        headers=auth_headers,
+    ).json()
+
+    client.patch(
+        f"/internal/v1/jobs/{script['job_id']}/status",
+        json={
+            "status": "complete",
+            "stage": "critic",
+            "deployed_app_url": f"/projects/{project['id']}/previs",
+        },
+        headers=internal_headers,
+    )
+
+    iterate_job_id = client.post(
+        f"/api/v1/projects/{project['id']}/iterate",
+        json={"request": "make it darker"},
+        headers=auth_headers,
+    ).json()["job_id"]
+    client.patch(
+        f"/internal/v1/jobs/{iterate_job_id}/status",
+        json={"status": "needs_clarification", "error_detail": "Which scene did you mean?"},
+        headers=internal_headers,
+    )
+
+    resp = client.get(f"/api/v1/projects/{project['id']}", headers=auth_headers)
+    assert resp.json()["deployed_app_url"] == f"/projects/{project['id']}/previs"

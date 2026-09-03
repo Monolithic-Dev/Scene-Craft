@@ -2,15 +2,34 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { api, ApiError, Job, ProjectDetail } from "@/lib/api";
+import { api, ApiError, Job, JobStep, ProjectDetail } from "@/lib/api";
+import { subscribeToJobTrace } from "@/lib/firebase";
 
 const POLL_INTERVAL_MS = 2000;
-const TERMINAL_STATUSES = new Set(["complete", "failed_needs_review"]);
+const TERMINAL_STATUSES = new Set(["complete", "failed_needs_review", "needs_clarification"]);
 
 function statusColor(status: string): string {
-  if (status === "failed" || status === "running") return "text-signal";
+  if (status === "failed" || status === "running" || status === "needs_clarification") {
+    return "text-signal";
+  }
   if (status === "complete") return "text-chalk/70";
   return "text-chalk/40";
+}
+
+function stepList(steps: JobStep[]) {
+  return (
+    <ul className="space-y-2">
+      {steps.map((step) => (
+        <li key={step.agent} className="flex items-center justify-between text-sm">
+          <span className="capitalize">{step.agent.replace("_", " ")}</span>
+          <span className={statusColor(step.status)}>
+            {step.status.replace("_", " ")}
+            {step.total != null ? ` (${step.completed ?? 0}/${step.total})` : ""}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 function FrameThumbnail({ url, alt }: { url: string; alt: string }) {
@@ -46,11 +65,13 @@ export default function ProjectDetailPage({
   const { projectId } = use(params);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const jobId = searchParams.get("job");
 
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [job, setJob] = useState<Job | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(searchParams.get("job"));
   const [error, setError] = useState<string | null>(null);
+  const [iterationText, setIterationText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function refreshProject() {
     try {
@@ -79,18 +100,46 @@ export default function ProjectDetailPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  // Live agent-trace panel (PHASE-05-ITERATION-AND-TRACE-UI.md SS7):
+  // subscribes directly to Firestore when configured (real push updates,
+  // no poll delay); falls back to polling GET /jobs/{id} otherwise — same
+  // data shape either way, since the trace document mirrors JobResponse.
   useEffect(() => {
-    if (!jobId) return;
+    if (!activeJobId) return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
 
+    function handleTerminal(status: string) {
+      if (TERMINAL_STATUSES.has(status)) void refreshProject();
+    }
+
+    const unsubscribe = subscribeToJobTrace(
+      activeJobId,
+      (trace) => {
+        if (cancelled || !trace) return;
+        setJob(trace);
+        handleTerminal(trace.status);
+      },
+      (err) => {
+        if (!cancelled) setError(err.message);
+      },
+    );
+
+    if (unsubscribe) {
+      return () => {
+        cancelled = true;
+        unsubscribe();
+      };
+    }
+
+    // Firestore not configured — poll instead.
     async function poll() {
       try {
-        const current = await api.getJob(jobId as string);
+        const current = await api.getJob(activeJobId as string);
         if (cancelled) return;
         setJob(current);
         if (TERMINAL_STATUSES.has(current.status)) {
-          await refreshProject();
+          handleTerminal(current.status);
           return;
         }
         timer = setTimeout(poll, POLL_INTERVAL_MS);
@@ -100,14 +149,30 @@ export default function ProjectDetailPage({
         }
       }
     }
-
     void poll();
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
+  }, [activeJobId]);
+
+  async function handleIterate(e: React.FormEvent) {
+    e.preventDefault();
+    if (!iterationText.trim() || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { job_id } = await api.iterate(projectId, iterationText.trim());
+      setIterationText("");
+      setActiveJobId(job_id);
+      setJob(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't submit that request.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   if (!project) {
     return (
@@ -121,6 +186,8 @@ export default function ProjectDetailPage({
       </main>
     );
   }
+
+  const jobInFlight = job !== null && !TERMINAL_STATUSES.has(job.status);
 
   return (
     <main className="min-h-screen bg-charcoal px-6 py-10 text-chalk">
@@ -137,22 +204,12 @@ export default function ProjectDetailPage({
         )}
         <div className="mb-8 mt-4 h-2 w-16 slate-stripe rounded-sm" aria-hidden="true" />
 
-        {job && !TERMINAL_STATUSES.has(job.status) && (
+        {job && jobInFlight && (
           <section className="mb-8 rounded-lg border border-wire bg-charcoal2 p-5">
             <h2 className="mb-3 font-mono text-xs uppercase tracking-wide text-chalk/50">
               Generating…
             </h2>
-            <ul className="space-y-2">
-              {job.steps.map((step) => (
-                <li key={step.agent} className="flex items-center justify-between text-sm">
-                  <span className="capitalize">{step.agent.replace("_", " ")}</span>
-                  <span className={statusColor(step.status)}>
-                    {step.status}
-                    {step.total != null ? ` (${step.completed ?? 0}/${step.total})` : ""}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            {stepList(job.steps)}
           </section>
         )}
 
@@ -163,6 +220,13 @@ export default function ProjectDetailPage({
           >
             Generation needs review: {job.error_detail ?? "an unspecified error occurred."}
           </p>
+        )}
+
+        {job?.status === "needs_clarification" && (
+          <div className="mb-8 rounded-lg border border-signal/40 bg-signal/10 p-4">
+            <p className="text-xs uppercase tracking-wide text-signal">SceneCraft asks</p>
+            <p className="mt-1 text-sm text-chalk">{job.error_detail}</p>
+          </div>
         )}
 
         {project.deployed_app_url && (
@@ -176,6 +240,34 @@ export default function ProjectDetailPage({
             >
               Open previs app →
             </a>
+          </section>
+        )}
+
+        {project.deployed_app_url && (
+          <section className="mb-8 rounded-lg border border-wire bg-charcoal2 p-5">
+            <h2 className="mb-3 font-mono text-xs uppercase tracking-wide text-chalk/50">
+              Iterate
+            </h2>
+            <form onSubmit={handleIterate} className="flex gap-3">
+              <input
+                value={iterationText}
+                onChange={(e) => setIterationText(e.target.value)}
+                disabled={jobInFlight || submitting}
+                placeholder={
+                  job?.status === "needs_clarification"
+                    ? "Answer SceneCraft's question…"
+                    : "e.g. make scene 4 night-time"
+                }
+                className="focus-ring flex-1 rounded-md border border-wire bg-charcoal px-3 py-2 text-chalk outline-none disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={jobInFlight || submitting || !iterationText.trim()}
+                className="focus-ring rounded-md bg-signal px-4 py-2 font-medium text-charcoal hover:brightness-95 disabled:opacity-40"
+              >
+                Send
+              </button>
+            </form>
           </section>
         )}
 
