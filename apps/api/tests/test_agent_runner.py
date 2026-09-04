@@ -1,6 +1,25 @@
 from unittest.mock import patch
 
-from src.core.agent_runner import trigger_initial_generation_job, trigger_iteration_job
+from src.core.agent_runner import (
+    _default_agents_dir,
+    trigger_initial_generation_job,
+    trigger_iteration_job,
+)
+
+
+def test_default_agents_dir_never_raises_regardless_of_directory_depth():
+    """Regression test for a real bug found live in Cloud Run: this used to
+    be a module-level constant computed eagerly at import time via
+    Path(__file__).resolve().parents[4] — correct in the local dev
+    checkout (4 levels up to repo root), but the deployed container's
+    flattened layout (apps/api/Dockerfile's `COPY src ./src`) only nests 3
+    levels deep, so parents[4] raised an uncaught IndexError that crashed
+    the entire app on startup before it ever got to serve a request. Now
+    lazy and exception-safe — this just asserts it never raises, in
+    whatever directory depth this test happens to run from.
+    """
+    result = _default_agents_dir()
+    assert result is None or isinstance(result, str)
 
 
 def test_returns_false_and_logs_when_executable_not_configured():

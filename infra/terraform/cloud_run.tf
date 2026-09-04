@@ -6,9 +6,10 @@
 # MCP-over-stdio-to-the-API out.
 
 resource "google_cloud_run_v2_service" "api" {
-  name     = "${local.name_prefix}-api"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name                = "${local.name_prefix}-api"
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false
 
   template {
     service_account = google_service_account.api.email
@@ -18,16 +19,10 @@ resource "google_cloud_run_v2_service" "api" {
       max_instance_count = 10
     }
 
-    vpc_access {
-      network_interfaces {
-        network    = google_compute_network.vpc.id
-        subnetwork = google_compute_subnetwork.subnet.id
-      }
-      # Only private-range traffic (Memorystore) routes through the VPC;
-      # calls to Cloud SQL (via its own Auth Proxy volume mount below),
-      # Gemini, and Pub/Sub still go out directly.
-      egress = "PRIVATE_RANGES_ONLY"
-    }
+    # No vpc_access block: Redis is external (Upstash, reached over the
+    # public internet via TLS — see variables.tf's redis_url) and Cloud SQL
+    # goes through its own Auth Proxy volume mount below, so nothing here
+    # needs a private network path.
 
     volumes {
       name = "cloudsql"
@@ -57,8 +52,13 @@ resource "google_cloud_run_v2_service" "api" {
         value = jsonencode([var.web_allowed_origin != "" ? var.web_allowed_origin : "http://localhost:3000"])
       }
       env {
-        name  = "REDIS_URL"
-        value = "redis://${google_redis_instance.cache.host}:${google_redis_instance.cache.port}/0"
+        name = "REDIS_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.redis_url.secret_id
+            version = "latest"
+          }
+        }
       }
       env {
         name  = "PUBSUB_TOPIC"
@@ -105,7 +105,30 @@ resource "google_cloud_run_v2_service" "api" {
     }
   }
 
-  depends_on = [google_project_service.apis]
+  # Explicit edges to everything this revision needs to actually exist at
+  # start time: the IAM grants (nothing above references those resources'
+  # attributes, so Terraform's implicit graph doesn't know the
+  # secret_key_ref values need their bindings first) AND the secret
+  # *versions* themselves (secret_key_ref's `secret` argument is the
+  # container's secret_id, not the version resource, so the version isn't
+  # implied either) — found the hard way, twice: a `-target` apply of just
+  # this resource first skipped the IAM bindings ("Permission denied on
+  # secret"), then after adding those, skipped the versions too ("Secret
+  # ... was not found" — the container existed with zero versions in it).
+  depends_on = [
+    google_project_service.apis,
+    google_secret_manager_secret_iam_member.api_reads_jwt_secret,
+    google_secret_manager_secret_iam_member.api_reads_internal_service_key,
+    google_secret_manager_secret_iam_member.api_reads_database_url,
+    google_secret_manager_secret_iam_member.api_reads_redis_url,
+    google_project_iam_member.api_cloudsql_client,
+    google_secret_manager_secret_version.jwt_secret_key,
+    google_secret_manager_secret_version.internal_service_key,
+    google_secret_manager_secret_version.database_url,
+    google_secret_manager_secret_version.redis_url,
+    google_sql_database.scenecraft,
+    google_sql_user.scenecraft,
+  ]
 }
 
 resource "google_cloud_run_v2_service_iam_member" "api_public" {
@@ -116,9 +139,10 @@ resource "google_cloud_run_v2_service_iam_member" "api_public" {
 }
 
 resource "google_cloud_run_v2_service" "web" {
-  name     = "${local.name_prefix}-web"
-  location = var.region
-  ingress  = "INGRESS_TRAFFIC_ALL"
+  name                = "${local.name_prefix}-web"
+  location            = var.region
+  ingress             = "INGRESS_TRAFFIC_ALL"
+  deletion_protection = false
 
   template {
     service_account = google_service_account.web.email
@@ -129,22 +153,22 @@ resource "google_cloud_run_v2_service" "web" {
     }
 
     containers {
-      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}/web:${var.container_image_tag}"
+      # web_image_tag, not container_image_tag — see variables.tf's
+      # web_image_tag for why this image can't be shared across
+      # environments the way api/agents' images are.
+      image = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}/web:${var.web_image_tag}"
 
       ports {
         container_port = 8080
       }
 
-      env {
-        name  = "NEXT_PUBLIC_API_BASE_URL"
-        value = google_cloud_run_v2_service.api.uri
-      }
-      # NEXT_PUBLIC_FIREBASE_* are not secrets (see apps/web/lib/firebase.ts
-      # and infra/firestore/firestore.rules for why) — deliberately left as
-      # plain vars set post-apply via `gcloud run services update`, rather
-      # than templated here, since the Firebase Web App must exist first
-      # (a one-time manual `firebase apps:create WEB` step — see
-      # infra/README.md).
+      # No NEXT_PUBLIC_* env vars here: Next.js inlines them into the
+      # client JS bundle at `next build` time, not at container runtime —
+      # a Cloud Run env var set here would have zero effect on the
+      # already-built, already-pushed image. They're passed as Docker
+      # build args instead when the image is built (see
+      # apps/web/Dockerfile and infra/README.md's "Building the web image"
+      # section) — this service just runs whatever was baked in.
 
       resources {
         limits = {
@@ -166,8 +190,9 @@ resource "google_cloud_run_v2_service_iam_member" "web_public" {
 }
 
 resource "google_cloud_run_v2_service" "agents" {
-  name     = "${local.name_prefix}-agents"
-  location = var.region
+  name                = "${local.name_prefix}-agents"
+  location            = var.region
+  deletion_protection = false
   # Pub/Sub push only — never a browser. No public health-check traffic
   # expected either; Pub/Sub's own OIDC-authenticated push is the only
   # caller (see pubsub.tf's push_config + IAM binding below).
@@ -181,13 +206,9 @@ resource "google_cloud_run_v2_service" "agents" {
       max_instance_count = 10
     }
 
-    vpc_access {
-      network_interfaces {
-        network    = google_compute_network.vpc.id
-        subnetwork = google_compute_subnetwork.subnet.id
-      }
-      egress = "PRIVATE_RANGES_ONLY"
-    }
+    # No vpc_access block: agents never talks to Redis (only apps/api's
+    # rate limiter does) and reaches everything else — Gemini/Vertex AI,
+    # the API's own /internal/v1 endpoints — over the public internet.
 
     # Deliberately no cloud_sql_instance volume here — agents never touch
     # Cloud SQL directly, only through MCP -> the API's /internal/v1
@@ -250,5 +271,12 @@ resource "google_cloud_run_v2_service" "agents" {
     timeout = "900s" # a full initial_generation run can take minutes
   }
 
-  depends_on = [google_project_service.apis]
+  # See the api service's depends_on comment above — same reasoning.
+  depends_on = [
+    google_project_service.apis,
+    google_secret_manager_secret_iam_member.agents_reads_gemini_key,
+    google_secret_manager_secret_iam_member.agents_reads_internal_service_key,
+    google_secret_manager_secret_version.gemini_api_key,
+    google_secret_manager_secret_version.internal_service_key,
+  ]
 }

@@ -1,16 +1,77 @@
-# Scene-Craft
+# SceneCraft
 
-**SceneCraft** — an agentic previs studio built for **Agentic Cinema: The Blockbuster Hackathon** (Google Cloud, Replit partner track).
+[![CI](https://github.com/Monolithic-Dev/Scene-Craft/actions/workflows/ci.yml/badge.svg)](https://github.com/Monolithic-Dev/Scene-Craft/actions/workflows/ci.yml)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-A script goes in. A multi-agent system reads it, breaks it into scenes and shots, generates storyboard concept art, and autonomously builds a real, interactive previs web app — its own capability, verified by a Critic Agent, served from SceneCraft itself and hosted on Replit per the partner track's actual requirement (see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0) — that a director can click through and iterate on in natural language.
+**A script goes in. A working, deployed, clickable previs app comes out — in minutes, not weeks.**
 
-Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — start there. The phase-by-phase build plan is in [`docs/08-IMPLEMENTATION-PLAN.md`](docs/08-IMPLEMENTATION-PLAN.md), with a detailed spec per phase in [`docs/Phases/`](docs/Phases/).
+Built for **Agentic Cinema: The Blockbuster Hackathon** (Google Cloud, Replit partner track).
+
+<!-- TODO before submission: replace with a screenshot or GIF of the deployed /previs route -->
+<!-- ![SceneCraft previs app](docs/assets/previs-screenshot.png) -->
+
+**🔗 Live app:** _[Replit URL — the hackathon partner-track submission link, fill in once deployed]_ · **🎬 Demo video:** _[link — fill in after recording]_ · **📄 Full docs:** [`docs/00-INDEX.md`](docs/00-INDEX.md)
+
+GCP production architecture (Phase 6) is also live, for judges who want to see the full Cloud Run/Cloud SQL/Pub/Sub stack: [`https://scenecraft-staging-web-fq6tp4iyja-uc.a.run.app`](https://scenecraft-staging-web-fq6tp4iyja-uc.a.run.app) — see [`infra/README.md`](infra/README.md).
+
+## How it works
+
+A multi-agent system reads an uploaded script, breaks it into scenes and shots, generates storyboard concept art per shot, and autonomously builds a real interactive previs web app from that data — its own capability, independently verified by a Critic Agent before it's ever shown as done. The result is served from SceneCraft itself and hosted on Replit per the partner track's actual requirement (a build-process + hosting requirement, not a runtime API — see [`docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md`](docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md) §0 for why that distinction mattered). A director can then click through the result and request changes in plain English — "make scene 4 night-time" — and watch a live agent-trace panel show the rebuild happen.
+
+## Architecture
+
+```mermaid
+flowchart TB
+    subgraph Client
+        UI[Next.js UI<br/>upload · agent trace · previs preview · chat]
+    end
+    subgraph Gateway["API Gateway (Cloud Run)"]
+        GW[FastAPI<br/>Auth · Validation · Rate Limiting]
+    end
+    subgraph ControlPlane["Control Plane"]
+        PS[Project Service<br/>Cloud SQL + Firestore]
+        AO[Agent Orchestrator]
+    end
+    subgraph Agents["Agent Pipeline"]
+        BA[Breakdown Agent]
+        FA[Frame Generation Agent]
+        AB[App-Build Agent<br/>constrained Gemini codegen]
+        CA[Critic Agent]
+        IA[Iteration Agent]
+    end
+    subgraph Data["Data & Messaging"]
+        SQL[(Cloud SQL)]
+        FS[(Firestore)]
+        CS[(Cloud Storage)]
+        PS_BUS{{Pub/Sub}}
+    end
+    PrevisRoute[["SceneCraft's own /previs route<br/>(hosted on Replit)"]]
+    UI -->|HTTPS/JWT| GW
+    GW --> PS
+    GW --> AO
+    PS --> SQL
+    PS --> FS
+    AO --> PS_BUS
+    PS_BUS --> BA --> FA --> AB --> CA
+    IA --> AB
+    BA --> CS
+    FA --> CS
+    AB --> PrevisRoute
+    CA --> PrevisRoute
+    UI -.live subscription.-> FS
+```
+
+Full diagram set (state machine, data flow, deployment topology) in [`docs/10-DIAGRAMS.md`](docs/10-DIAGRAMS.md).
+
+## Tech stack
+
+Gemini + Vertex AI (breakdown, image generation, captioning) · FastAPI + Postgres (control plane) · Next.js (frontend + previs app) · MCP (the real agent↔data-layer boundary) · Firestore (live trace push) · OpenTelemetry → Grafana · Redis (distributed rate limiting) · Pub/Sub + Cloud Run (async job dispatch) · Terraform (all infrastructure) · Replit (hosting, partner track requirement).
+
+Full rationale per technology: [`docs/02-TECH-STACK.md`](docs/02-TECH-STACK.md).
 
 ## Status
 
-**Phases 1-5 are complete and verified live end to end** — real script upload, breakdown, frame generation, self-hosted previs generation with Critic verification, and natural-language iteration with a live Firestore-backed trace panel, all exercised against real Gemini/Vertex AI and a real browser, no mocks. Known operational constraint worth flagging before any live demo: the `GEMINI_API_KEY`'s free tier caps `gemini-2.5-flash` at both 5 requests/minute *and* a 20-requests/day quota — a single day of active development/demo rehearsal can exhaust it (the app handles this correctly, as an honest `failed_needs_review`/`needs_clarification` state, but it's worth having a fallback key or upgraded quota before judging).
-
-**Phase 6's code and infrastructure-as-code are complete** (OpenTelemetry tracing, Redis-backed rate limiting, Pub/Sub job dispatch, structured logging, full Terraform for the production architecture, CI/CD deploy pipeline) but **not yet applied to a live environment** — `terraform plan` against the real GCP project is clean (72 resources, no errors), but `terraform apply` is a deliberate, separate step held off until closer to Phase 7 demo prep to avoid weeks of idle Cloud SQL/Memorystore billing. See `infra/README.md` for the full rationale, cost estimate, and what's needed to actually deploy.
+Phases 1-6 complete, including a real deployed staging environment. Phase 7 is in progress. See [`docs/08-IMPLEMENTATION-PLAN.md`](docs/08-IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and [`docs/Phases/`](docs/Phases/) for each phase's detailed spec.
 
 | Phase | Status |
 |---|---|
@@ -19,8 +80,10 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 | 3 — Storyboard Frame Generation | ✅ Done |
 | 4 — App-Build & Critic Agents | ✅ Done |
 | 5 — Iteration Loop & Trace UI | ✅ Done |
-| 6 — Observability, Security, Deployment | Code + Terraform done, not yet deployed |
-| 7 — Demo & Submission | Not started |
+| 6 — Observability, Security, Deployment | ✅ Done, staging deployed and live-verified |
+| 7 — Demo & Submission | 🔶 In progress — judge guide, demo script, and pitch deck drafted; Replit deployment, demo video recording, and Devpost form submission still open |
+
+Known operational constraint worth flagging: the `GEMINI_API_KEY`'s free tier caps `gemini-2.5-flash` at both 5 requests/minute *and* a 20-requests/day quota — a single day of active development/demo rehearsal can exhaust it (the app handles this correctly, as an honest `failed_needs_review`/`needs_clarification` state, but it's worth having a fallback key or upgraded quota before judging).
 
 ## Repository layout
 
@@ -28,30 +91,32 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 apps/
   api/            FastAPI control-plane backend (auth, projects, scripts, jobs)
   web/            Next.js frontend
-agents/           Agent orchestrator + per-agent implementations (breakdown, frame, app_build, critic, iteration — all live)
+agents/           Agent orchestrator + per-agent implementations
 mcp_server/       Internal MCP server exposing project-state tools to agents
-infra/            firestore/ (live), terraform/ (full IaC, validated but not yet applied — see infra/README.md), grafana/ (dashboard JSON)
-docs/             PRD, system design, agent architecture, phase-by-phase plan
+infra/            terraform/ (full IaC), firestore/ (security rules), grafana/ (dashboards)
+docs/             PRD, system design, agent architecture, phase-by-phase plan, judge guide
 ```
 
 See [`docs/07-FOLDER-STRUCTURE.md`](docs/07-FOLDER-STRUCTURE.md) for the rationale behind this layout.
 
 ## Architecture note: three independent Python packages
 
-`apps/api`, `mcp_server`, and `agents` each have their own `pyproject.toml` and their own virtualenv — they're separate deployable units (per `03-SYSTEM-DESIGN.md`), not one monolith. In particular:
+`apps/api`, `mcp_server`, and `agents` each have their own `pyproject.toml` and their own virtualenv — they're separate deployable units (per [`docs/03-SYSTEM-DESIGN.md`](docs/03-SYSTEM-DESIGN.md)), not one monolith. In particular:
 
-- **`agents` never talks to the database.** It calls `mcp_server` over the real MCP protocol (stdio), which in turn calls `apps/api`'s `/internal/v1/*` endpoints over HTTP (guarded by a shared-secret header). This is the literal MCP-server boundary the hackathon rubric asks for, not just a design diagram.
-- **`apps/api` triggers agent runs as a subprocess**, not an in-process call — `agents/` has its own dependencies (`mcp`, `google-genai`) that must not be installed into `apps/api`'s venv. This is the local-dev stand-in for the Pub/Sub + Cloud Run job Phase 6 provisions.
+- **`agents` never talks to the database.** It calls `mcp_server` over the real MCP protocol (stdio), which in turn calls `apps/api`'s `/internal/v1/*` endpoints over HTTP (guarded by a shared-secret header, enforced again at the infra layer — the agents Cloud Run service account has no Cloud SQL IAM role at all). This is the literal MCP-server boundary the hackathon rubric asks for, not just a design diagram.
+- **`apps/api` dispatches agent runs** via a local subprocess in dev, or a Pub/Sub message consumed by a dedicated "Agent Workers" Cloud Run service in production — see `apps/api/src/core/agent_runner.py` and `agents/orchestrator/pubsub_receiver.py`.
+
+---
 
 ## Running locally
 
-### Database
+### Database & Redis
 
 ```bash
-docker compose up -d postgres
+docker compose up -d postgres redis
 ```
 
-Brings up a local Postgres matching Cloud SQL's behavior more closely than the SQLite fallback. SQLite still works out of the box for fast iteration — see `apps/api/.env.example`.
+Brings up a local Postgres (matching Cloud SQL's behavior more closely than the SQLite fallback — SQLite still works out of the box for fast iteration, see `apps/api/.env.example`) and a local Redis for the rate limiter. In staging/prod, Redis is a free external [Upstash](https://upstash.com) instance rather than Cloud Memorystore — see `infra/README.md` for why.
 
 ### 1. Backend (control plane)
 
@@ -105,7 +170,7 @@ GOOGLE_CLOUD_PROJECT=your-project-id
 GOOGLE_CLOUD_LOCATION=us-central1
 ```
 
-Uses `gemini-2.5-flash-image` rather than the dedicated Imagen `generate_images()` API — the latter stayed inaccessible (404) for a real test project even with billing and the Vertex AI API both enabled, since Model Garden gates generative-media models individually; `gemini-2.5-flash-image` worked immediately. See `docs/Phases/PHASE-03-FRAME-GENERATION.md`'s model note.
+Uses `gemini-2.5-flash-image` rather than the dedicated Imagen `generate_images()` API — the latter stayed inaccessible (404) for a real test project even with billing and the Vertex AI API both enabled, since Model Garden gates generative-media models individually; `gemini-2.5-flash-image` worked immediately. See [`docs/Phases/PHASE-03-FRAME-GENERATION.md`](docs/Phases/PHASE-03-FRAME-GENERATION.md)'s model note.
 
 Without `GOOGLE_CLOUD_PROJECT` set, breakdown still runs fine — frame generation just isn't reachable yet (`ImagenNotConfiguredError`, caught per-shot, never blocks the rest of the pipeline in a way that leaves the job stuck).
 
@@ -139,22 +204,28 @@ cd apps/web    && npm run typecheck && npm run build
 cd infra/terraform && terraform fmt -check -recursive && terraform init -backend=false && terraform validate
 ```
 
-CI (`.github/workflows/ci.yml`) runs the same checks — lint, type-check, test, dependency audit, build, `terraform fmt`/`validate` — on every pull request, one job per package. `.github/workflows/deploy.yml` additionally runs a `terraform plan` against the real project on every push to `main` once `GCP_WORKLOAD_IDENTITY_PROVIDER`/`GCP_SERVICE_ACCOUNT` repo secrets are configured (see `infra/README.md`), and applies to staging/production on the same trigger.
+CI (`.github/workflows/ci.yml`) runs the same checks — lint, type-check, test, dependency audit, build, `terraform fmt`/`validate` — on every pull request, one job per package. `.github/workflows/deploy.yml` additionally runs a `terraform plan` against the real project on every push to `main`, and applies to staging/production once its manual approval gate is passed.
+
+### Deploying
+
+`infra/terraform/` provisions the entire production architecture with one `terraform apply` — see [`infra/README.md`](infra/README.md) for the full walkthrough, cost breakdown, and the free-tier choices made along the way (Upstash Redis instead of Cloud Memorystore, in particular).
 
 ## What's implemented
 
-**Phase 1** — Email/password signup and login (JWT), project creation and listing (ownership checked before existence is ever revealed), script upload (`.txt`/`.pdf`) with real PDF extraction, consistent JSON error envelope, per-instance rate limiting (documented as temporary — becomes Redis-backed in Phase 6), Alembic migrations.
+**Phase 1** — Email/password signup and login (JWT), project creation and listing (ownership checked before existence is ever revealed), script upload (`.txt`/`.pdf`) with real PDF extraction, consistent JSON error envelope, Alembic migrations.
 
-**Phase 2** — Script upload now creates a `GenerationJob` and (if `agents` is configured) triggers a real breakdown run: the script is chunked on scene boundaries, each chunk sent to Gemini with a schema-constrained prompt, validated, retried once on failure, and persisted via `mcp_server`'s tools. A scene that fails validation twice is flagged `needs_review` and the job still completes — one bad scene never blocks the rest. `GET /api/v1/jobs/{id}` and `GET /api/v1/projects/{id}` expose job status and the resulting breakdown.
+**Phase 2** — Script upload creates a `GenerationJob` and triggers a real breakdown run: the script is chunked on scene boundaries, each chunk sent to Gemini with a schema-constrained prompt, validated, retried once on failure, and persisted via `mcp_server`'s tools. A scene that fails validation twice is flagged `needs_review` and the job still completes — one bad scene never blocks the rest.
 
-**Phase 3** — After breakdown completes, the Coordinator fans out one concurrent worker per shot (`asyncio.gather`, real concurrency via `asyncio.to_thread` around the blocking image-generation/captioning calls — not a serial loop). Each worker generates a frame using the project's locked style reference (via `gemini-2.5-flash-image` on Vertex AI — the dedicated Imagen API stayed inaccessible for this project even with billing and the Vertex AI API enabled, see `docs/Phases/PHASE-03-FRAME-GENERATION.md`), captions it via Gemini multimodal, and writes the result through a new `write_frame_record` MCP tool. A shot's frame generation and its captioning are independent failure modes: a persistent generation failure (3 retries, exponential backoff) inserts a placeholder and flags the shot; a captioning-only failure keeps the real image and just falls back on alt-text. `GET /api/v1/jobs/{id}` reports live `{"completed", "total", "failed"}` sub-progress for the `frames` step. Frames are written to a local-dev stand-in for Cloud Storage (`agents/.local_storage/`, swapped for real GCS in Phase 6). **Verified live end to end** — real script → real breakdown → real generated frames → real captions, all persisted through the actual API, no mocks.
+**Phase 3** — The Coordinator fans out one concurrent worker per shot for frame generation (real `asyncio` concurrency, not a serial loop). Each worker generates a frame via `gemini-2.5-flash-image` on Vertex AI using the project's locked style reference, captions it via Gemini multimodal, and writes the result through `mcp_server`. Frame generation and captioning are independent failure modes with independent fallbacks (placeholder frame vs. fallback alt-text). **Verified live end to end** — real script → real breakdown → real generated frames → real captions.
 
-**Phase 4** — The App-Build Agent generates the project's previs content itself rather than wrapping a Replit API (there is no such API for a normal account — see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0 for the full correction): a deterministic data layer read live from scenes/shots/frames, plus a single bounded, schema-validated Gemini call for presentation-only values (`accent_color`, `tone_note`) — never structure or content. The Critic Agent independently re-verifies shot-frame coverage and the customization schema before a job is marked complete, with one bounded retry on failure. The result renders at `apps/web`'s own `/projects/{id}/previs` route (scene navigator, shot cards, CSV export) — no separate deployment per project, since the page always reads live from the same tables. **Verified live end to end**, including through a real browser via Playwright.
+**Phase 4** — The App-Build Agent generates the project's previs content itself: a deterministic data layer read live from scenes/shots/frames, plus one bounded, schema-validated Gemini call for presentation-only values (`accent_color`, `tone_note`) — never structure or content. The Critic Agent independently re-verifies shot-frame coverage and the customization schema before a job is marked complete, with one bounded retry on failure. Renders at `apps/web`'s own `/projects/{id}/previs` route. **Verified live end to end**, including through a real browser via Playwright.
 
-**Phase 5** — The Iteration Agent turns a director's free-text request into structured shot-field diffs (Gemini, schema-constrained), using the last 10 `ShotEdit` rows as memory for follow-up requests. An ambiguous request (e.g. "make it darker" with nothing to disambiguate against) gets a `needs_clarification` status and a real clarification question back — never a guessed change. A clear request is applied via a new `write_shot_edit` MCP tool (field-name validated against an allowlist independently of the prompt) and triggers a *scoped* App-Build/Critic pass — since Phase 4's design has no per-shot data file to regenerate, this skips the Gemini customization call entirely and only re-verifies the affected shot(s), making a single-field edit measurably faster than a full initial generation (live-measured: ~20s vs. ~90s). `generation_jobs` is mirrored into Firestore (`job_traces/{job_id}`) on every stage transition; the frontend subscribes directly via the Firebase Web SDK for a real push-based live trace panel (falls back to polling if Firestore isn't configured). Firestore access is a deliberate capability-URL tradeoff — public read scoped to exactly `job_traces/{jobId}` (an unguessable UUID never exposed except to the owning user), writes blocked for every client — see `infra/firestore/firestore.rules`. **Verified live end to end**, including through a real browser: a genuine live-push trace update, a completed edit, and a real ambiguous-request clarification, all against live Gemini — plus a real bug caught and fixed via that browser check (a later job that never reaches App-Build no longer hides an already-live previs link).
+**Phase 5** — The Iteration Agent turns a director's free-text request into structured shot-field diffs, using the last 10 `ShotEdit` rows as memory. An ambiguous request gets a `needs_clarification` status and a real clarification question back — never a guessed change. A clear request triggers a *scoped* App-Build/Critic pass, measurably faster than a full initial generation (live-measured: ~20s vs. ~90s). `generation_jobs` mirrors into Firestore on every stage transition; the frontend subscribes directly via the Firebase Web SDK for a genuine push-based live trace panel. **Verified live end to end**, including a real bug caught and fixed via browser testing.
 
-**Phase 6** — OpenTelemetry spans wrap every agent invocation (`agent.<name>.run`, with `project_id`/`job_id`/`agent_name`/`status`/`duration_ms`), exported to Grafana Cloud when configured, else created locally with no export (never a hard dependency). The Phase 1 in-process rate limiter is replaced with a Redis-backed distributed one (fixed-window counter via atomic `INCR`, keyed by authenticated user id rather than IP), **live-verified against a real local Redis** — including finding and fixing a genuine redis-py 8.x RESP3 handshake incompatibility along the way. `agent_runner.py` gains a Pub/Sub publish path alongside its existing local subprocess spawn, activated by `PUBSUB_TOPIC`; the orchestrator gained a Cloud Run push-receiver entrypoint (`agents/orchestrator/pubsub_receiver.py`) alongside its existing CLI one. Structured JSON logging replaces plain-text logs. `infra/terraform/` provisions the full production architecture (3 Cloud Run services, Cloud SQL, Memorystore, Pub/Sub, Cloud Storage, Secret Manager, Artifact Registry, least-privilege IAM, optional Grafana Cloud dashboards) — `terraform plan` against the real GCP project produces a clean 72-resource plan, including a real bug (`for_each` over apply-time-unknown values) caught only by `plan`, not `validate`. The security review checklist (`docs/Phases/PHASE-06-SECURITY-REVIEW.md`) includes a live prompt-injection spot check against real Gemini and a captured structured-log line proving no secrets leak. **Not yet deployed** — see `infra/README.md` for why `terraform apply` is a deliberate, separately-triggered step.
+**Phase 6** — OpenTelemetry spans wrap every agent invocation (`agent.<name>.run`, with `project_id`/`job_id`/`agent_name`/`status`/`duration_ms`). The Phase 1 in-process rate limiter is replaced with a Redis-backed distributed one, live-verified against a real Redis (including finding and fixing a genuine redis-py 8.x RESP3 handshake incompatibility along the way). `agent_runner.py` gains a Pub/Sub publish path alongside its local subprocess spawn; the orchestrator gained a Cloud Run push-receiver entrypoint. Structured JSON logging replaces plain-text logs. `infra/terraform/` provisions the full production architecture (3 Cloud Run services, Cloud SQL, free external Redis, Pub/Sub, Cloud Storage, Secret Manager, Artifact Registry, least-privilege IAM, optional Grafana Cloud dashboards) — **and it's genuinely deployed**, not just `plan`-clean: real signup/login against real Cloud SQL, live auth/cross-user/CORS security checks, and the actual rendered app, all verified against the live URLs above. Getting there surfaced and fixed several real bugs invisible to local testing alone — a directory-depth assumption that crashed the API container on boot, and a string of Terraform dependency-graph gaps (secret versions, the Cloud SQL user, Cloud Run's public-invoker IAM, the Pub/Sub service agent) — see `infra/README.md`'s "Gotchas found during the first real deploy" for the full list with root causes.
+
+**Phase 7** — Judge guide (`docs/judge-guide.md`), demo script (`docs/demo-script.md`), Devpost form content (`docs/devpost-submission.md`), and a pitch deck all drafted; final repo hygiene pass done (license visibility — a real LICENSE/README mismatch caught and fixed, `.gitignore` audit including Terraform plan files, full git-history secret scan). **Still open**: the actual Replit Guided Import + Reserved VM deployment (the partner-track hosting requirement — never completed), recording and uploading the demo video, and submitting the Devpost form.
 
 ## License
 
-MIT — see [`LICENSE`](LICENSE).
+Apache License 2.0 — see [`LICENSE`](LICENSE).

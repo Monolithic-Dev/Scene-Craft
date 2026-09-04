@@ -74,12 +74,6 @@ resource "google_project_iam_member" "deployer_cloudsql_admin" {
   member  = "serviceAccount:${google_service_account.deployer.email}"
 }
 
-resource "google_project_iam_member" "deployer_redis_admin" {
-  project = var.project_id
-  role    = "roles/redis.admin"
-  member  = "serviceAccount:${google_service_account.deployer.email}"
-}
-
 resource "google_project_iam_member" "deployer_pubsub_admin" {
   project = var.project_id
   role    = "roles/pubsub.admin"
