@@ -47,6 +47,14 @@ class Settings(BaseSettings):
     agents_python_executable: str = ""
     agents_working_dir: str = ""
 
+    # Firestore-backed live job trace (Phase 5) — a fast, ephemeral mirror
+    # of generation_jobs for the frontend's live trace panel; Cloud SQL
+    # stays the durable system of record. Empty by default: the trace
+    # endpoint degrades to deriving steps from Cloud SQL alone (same shape,
+    # just polling-speed rather than sub-second) rather than erroring, same
+    # "stays honestly unconfigured" pattern as agents_python_executable.
+    google_cloud_project: str = ""
+
     @model_validator(mode="after")
     def _forbid_insecure_secrets_outside_dev(self) -> "Settings":
         if self.environment == "development":

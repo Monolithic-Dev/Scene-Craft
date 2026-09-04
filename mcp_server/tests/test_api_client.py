@@ -9,10 +9,12 @@ import pytest
 
 from src.api_client import (
     ApiClientError,
+    get_edit_history,
     get_project_state,
     update_job_status,
     write_frame_record,
     write_previs_customization,
+    write_shot_edit,
     write_shot_records,
 )
 from src.schemas import SceneInput, ShotInput
@@ -182,3 +184,64 @@ def test_write_previs_customization_raises_on_failure():
     with _patched_client(httpx.MockTransport(handler)):
         with pytest.raises(ApiClientError, match="no such project"):
             write_previs_customization("does-not-exist", "X", "#000000", "Y")
+
+
+def test_write_shot_edit_posts_the_correct_body():
+    seen_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return httpx.Response(
+            200,
+            json={
+                "shot_id": "shot-1",
+                "edit_id": "edit-1",
+                "field": "time_of_day",
+                "old_value": "DAY",
+                "new_value": "NIGHT",
+                "created_at": "2026-01-01T00:00:00Z",
+            },
+        )
+
+    with _patched_client(httpx.MockTransport(handler)):
+        result = write_shot_edit("shot-1", "time_of_day", "NIGHT", "user-1")
+
+    assert result.new_value == "NIGHT"
+    assert seen_requests[0].url.path == "/internal/v1/shots/shot-1/edit"
+    body = json.loads(seen_requests[0].content)
+    assert body == {"field": "time_of_day", "new_value": "NIGHT", "requested_by": "user-1"}
+
+
+def test_write_shot_edit_raises_on_failure():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": "VALIDATION_ERROR", "message": "'id' is not editable"}}
+        return httpx.Response(400, json=body)
+
+    with _patched_client(httpx.MockTransport(handler)):
+        with pytest.raises(ApiClientError, match="not editable"):
+            write_shot_edit("shot-1", "id", "hacked", "user-1")
+
+
+def test_get_edit_history_sends_limit_as_a_query_param():
+    seen_requests = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_requests.append(request)
+        return httpx.Response(200, json={"edits": []})
+
+    with _patched_client(httpx.MockTransport(handler)):
+        result = get_edit_history("proj-1", limit=5)
+
+    assert result.edits == []
+    assert seen_requests[0].url.path == "/internal/v1/projects/proj-1/edit-history"
+    assert seen_requests[0].url.params["limit"] == "5"
+
+
+def test_get_edit_history_raises_on_failure():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": "NOT_FOUND", "message": "no such project"}}
+        return httpx.Response(404, json=body)
+
+    with _patched_client(httpx.MockTransport(handler)):
+        with pytest.raises(ApiClientError, match="no such project"):
+            get_edit_history("does-not-exist")

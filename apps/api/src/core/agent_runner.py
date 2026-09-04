@@ -69,3 +69,50 @@ def trigger_initial_generation_job(
         logger.exception("agent_runner.spawn_failed", extra={"job_id": job_id})
         return False
     return True
+
+
+def trigger_iteration_job(
+    job_id: str,
+    project_id: str,
+    user_request: str,
+    requested_by: str,
+    *,
+    popen: PopenFactory = subprocess.Popen,
+) -> bool:
+    """Same spawn mechanism as trigger_initial_generation_job, for
+    job_type == iteration — see PHASE-05-ITERATION-AND-TRACE-UI.md SS5. The
+    director's free-text request and their user id (ShotEdit.requested_by
+    has a real FK to users.id) travel as plain argv entries — never through
+    a shell (popen's list form passes each element literally, so there's no
+    injection surface from arbitrary user text here) — since the Iteration
+    Agent's only other way to learn either would be a DB column dedicated to
+    one job type, which isn't worth adding for this.
+    """
+    settings = get_settings()
+    python_executable = _resolve_python_executable(settings.agents_python_executable)
+    if python_executable is None:
+        logger.warning(
+            "agent_runner.not_configured",
+            extra={"job_id": job_id, "hint": "set AGENTS_PYTHON_EXECUTABLE to run Phase 2+ jobs"},
+        )
+        return False
+
+    agents_dir = settings.agents_working_dir or str(_DEFAULT_AGENTS_DIR)
+    try:
+        popen(
+            [
+                python_executable,
+                "-m",
+                "orchestrator.coordinator",
+                "--iterate",
+                job_id,
+                project_id,
+                user_request,
+                requested_by,
+            ],
+            cwd=agents_dir,
+        )
+    except OSError:
+        logger.exception("agent_runner.spawn_failed", extra={"job_id": job_id})
+        return False
+    return True

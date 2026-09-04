@@ -140,3 +140,30 @@ class ShotFrameWriteResponse(BaseModel):
     shot_id: str
     frame_id: str
     updated_at: datetime
+
+
+class ShotEditWriteRequest(BaseModel):
+    field: str
+    new_value: str
+    requested_by: str
+
+
+class ShotEditWriteResponse(BaseModel):
+    shot_id: str
+    edit_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class ShotEditSummary(BaseModel):
+    shot_id: str
+    field: str
+    old_value: str | None
+    new_value: str
+    created_at: datetime
+
+
+class RecentEditsResponse(BaseModel):
+    edits: list[ShotEditSummary]

@@ -163,3 +163,30 @@ async def test_app_build_never_raises_on_customization_failure_alone():
 
     assert result.used_fallback_customization is True
     assert fake_mcp.written_customizations[0]["accent_color"] == DEFAULT_ACCENT_COLOR
+
+
+# --- scoped/incremental rebuilds (Phase 5) ----------------------------------
+
+
+async def test_app_build_scoped_run_skips_customization_entirely():
+    """PHASE-05-ITERATION-AND-TRACE-UI.md SS4: because there is no per-shot
+    data file to regenerate, a scoped (iteration) run needs zero App-Build
+    work — no Gemini call, no write — which is what makes it measurably
+    faster than a full initial generation.
+    """
+    fake_mcp = FakeMcp(script_text="", existing_scenes=[{"shots": [_shot("shot-1")]}])
+    with (
+        patch("app_build_agent.agent.get_project_state") as mock_state,
+        patch(
+            "app_build_agent.agent.write_previs_customization",
+            fake_mcp.write_previs_customization,
+        ),
+        patch("app_build_agent.customization.generate_json") as mock_generate,
+    ):
+        result = await run("proj-1", scoped_shot_ids=["shot-1"])
+
+    assert result.deployed_app_url == "/projects/proj-1/previs"
+    assert result.skipped_customization is True
+    mock_state.assert_not_called()
+    mock_generate.assert_not_called()
+    assert fake_mcp.written_customizations == []

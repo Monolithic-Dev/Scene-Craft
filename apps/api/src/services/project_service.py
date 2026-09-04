@@ -76,8 +76,11 @@ class ProjectService:
         return self._scenes.list_for_script(script.id)
 
     def get_deployed_app_url(self, project_id: str) -> str | None:
-        """None until the App-Build Agent's stage completes on the latest
-        job — never an error state, same convention as get_breakdown.
+        """None until some job's App-Build stage has ever completed — never
+        an error state, same convention as get_breakdown. Reflects the most
+        recent job that actually deployed, not just the most recent job
+        overall (a later iteration job stuck on needs_clarification or an
+        early failure must not make an already-live previs disappear).
         """
-        job = self._jobs.get_latest_for_project(project_id)
+        job = self._jobs.get_latest_deployed_for_project(project_id)
         return job.deployed_app_url if job is not None else None

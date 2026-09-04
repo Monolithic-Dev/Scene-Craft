@@ -134,3 +134,21 @@ async def write_previs_customization(
             "tone_note": tone_note,
         },
     )
+
+
+async def write_shot_edit(
+    shot_id: str, field: str, new_value: str, requested_by: str
+) -> dict[str, Any]:
+    return await _call_tool(
+        "write_shot_edit",
+        {
+            "shot_id": shot_id,
+            "field": field,
+            "new_value": new_value,
+            "requested_by": requested_by,
+        },
+    )
+
+
+async def get_edit_history(project_id: str, limit: int = 10) -> dict[str, Any]:
+    return await _call_tool("get_edit_history", {"project_id": project_id, "limit": limit})

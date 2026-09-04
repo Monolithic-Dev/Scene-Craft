@@ -21,12 +21,29 @@ class GenerationJobRepository:
         return self._db.get(GenerationJob, job_id)
 
     def get_latest_for_project(self, project_id: str) -> GenerationJob | None:
-        # Backs ProjectDetailResponse.deployed_app_url (PHASE-04-APP-BUILD-
-        # AND-CRITIC.md SS2) — the URL lives on the job, not the project,
-        # since a project can accumulate multiple jobs over its lifetime.
         stmt = (
             select(GenerationJob)
             .where(GenerationJob.project_id == project_id)
+            .order_by(GenerationJob.created_at.desc())
+        )
+        return self._db.execute(stmt).scalars().first()
+
+    def get_latest_deployed_for_project(self, project_id: str) -> GenerationJob | None:
+        # Backs ProjectDetailResponse.deployed_app_url (PHASE-04-APP-BUILD-
+        # AND-CRITIC.md SS2) — the URL lives on the job, not the project,
+        # since a project can accumulate multiple jobs over its lifetime.
+        # Deliberately NOT just "the latest job": once Phase 5 lets a later
+        # job stop short of app_build (needs_clarification, or an early
+        # failure), the *most recent* job's own deployed_app_url is None
+        # even though an earlier job's deployment is still live — the UI
+        # must not lose the previs link just because the newest job never
+        # got that far.
+        stmt = (
+            select(GenerationJob)
+            .where(
+                GenerationJob.project_id == project_id,
+                GenerationJob.deployed_app_url.is_not(None),
+            )
             .order_by(GenerationJob.created_at.desc())
         )
         return self._db.execute(stmt).scalars().first()

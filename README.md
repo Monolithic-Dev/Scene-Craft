@@ -8,15 +8,15 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 
 ## Status
 
-**Phase 3 (Storyboard Frame Generation) is complete and verified live end to end** — real script upload, real breakdown, real generated frames (via `gemini-2.5-flash-image` on Vertex AI, not the dedicated Imagen API — see `docs/Phases/PHASE-03-FRAME-GENERATION.md`), real captioning, all persisted through the actual API. Known operational constraint worth flagging before any live demo: the `GEMINI_API_KEY`'s free tier caps `gemini-2.5-flash` at 5 requests/minute, and breakdown plus concurrent per-shot captioning can burn through that fast on anything but a small script.
+**Phases 1-5 are complete and verified live end to end** — real script upload, breakdown, frame generation, self-hosted previs generation with Critic verification, and natural-language iteration with a live Firestore-backed trace panel, all exercised against real Gemini/Vertex AI and a real browser, no mocks. Known operational constraint worth flagging before any live demo: the `GEMINI_API_KEY`'s free tier caps `gemini-2.5-flash` at both 5 requests/minute *and* a 20-requests/day quota — a single day of active development/demo rehearsal can exhaust it (the app handles this correctly, as an honest `failed_needs_review`/`needs_clarification` state, but it's worth having a fallback key or upgraded quota before judging).
 
 | Phase | Status |
 |---|---|
 | 1 — Foundations | ✅ Done |
 | 2 — Script Breakdown Agent | ✅ Done |
 | 3 — Storyboard Frame Generation | ✅ Done |
-| 4 — App-Build & Critic Agents | Not started |
-| 5 — Iteration Loop & Trace UI | Not started |
+| 4 — App-Build & Critic Agents | ✅ Done |
+| 5 — Iteration Loop & Trace UI | ✅ Done |
 | 6 — Observability, Security, Deployment | Not started |
 | 7 — Demo & Submission | Not started |
 
@@ -26,9 +26,9 @@ Full product/technical specification lives in [`docs/`](docs/00-INDEX.md) — st
 apps/
   api/            FastAPI control-plane backend (auth, projects, scripts, jobs)
   web/            Next.js frontend
-agents/           Agent orchestrator + per-agent implementations (breakdown_agent, frame_agent live; app_build/critic/iteration are Phase 4+)
+agents/           Agent orchestrator + per-agent implementations (breakdown, frame, app_build, critic, iteration — all live)
 mcp_server/       Internal MCP server exposing project-state tools to agents
-infra/            (Phase 6) Terraform + Docker infra
+infra/            firestore/ (live — security rules for the trace mirror); terraform/ + docker/ land in Phase 6
 docs/             PRD, system design, agent architecture, phase-by-phase plan
 ```
 
@@ -62,6 +62,15 @@ uvicorn src.main:app --reload
 ```
 
 API docs: `http://localhost:8000/docs`.
+
+Live agent-trace panel (Phase 5+) additionally needs a GCP project with the Firestore API enabled and a Native-mode database created (`gcloud services enable firestore.googleapis.com`, `gcloud firestore databases create --type=firestore-native`, then deploy `infra/firestore/firestore.rules` with `firebase deploy --only firestore:rules`), and:
+
+```
+# In apps/api/.env:
+GOOGLE_CLOUD_PROJECT=your-project-id
+```
+
+Without it, `GET /jobs/{id}` still works from Cloud SQL alone — the frontend just falls back to polling instead of a live push.
 
 ### 2. MCP server (Phase 2+)
 
@@ -112,18 +121,18 @@ Without this, script uploads still create a job — it just stays `queued` (see 
 ```bash
 cd apps/web
 npm install
-cp .env.local.example .env.local
+cp .env.example .env.local
 npm run dev
 ```
 
-Visit `http://localhost:3000`.
+Visit `http://localhost:3000`. The live trace panel needs the `NEXT_PUBLIC_FIREBASE_*` values too (get them with `firebase apps:sdkconfig WEB <app-id> --project <gcp-project-id>` — not secret, see `lib/firebase.ts`); without them the page falls back to polling `GET /jobs/{id}` instead of subscribing to Firestore directly. **Use `http://localhost:3000`, not `http://127.0.0.1:3000`** — Next.js 16's dev server blocks cross-origin dev-resource requests by default, which silently breaks client-side hydration under `127.0.0.1`.
 
 ### Tests / checks
 
 ```bash
 cd apps/api    && ruff check . && mypy --strict src && pytest -v
 cd mcp_server  && ruff check . && mypy --strict src && pytest -v
-cd agents      && ruff check . && mypy --strict orchestrator breakdown_agent frame_agent shared && pytest -v
+cd agents      && ruff check . && mypy --strict orchestrator breakdown_agent frame_agent app_build_agent critic_agent iteration_agent shared && pytest -v
 cd apps/web    && npm run typecheck && npm run build
 ```
 
@@ -136,6 +145,10 @@ CI (`.github/workflows/ci.yml`) runs the same checks — lint, type-check, test,
 **Phase 2** — Script upload now creates a `GenerationJob` and (if `agents` is configured) triggers a real breakdown run: the script is chunked on scene boundaries, each chunk sent to Gemini with a schema-constrained prompt, validated, retried once on failure, and persisted via `mcp_server`'s tools. A scene that fails validation twice is flagged `needs_review` and the job still completes — one bad scene never blocks the rest. `GET /api/v1/jobs/{id}` and `GET /api/v1/projects/{id}` expose job status and the resulting breakdown.
 
 **Phase 3** — After breakdown completes, the Coordinator fans out one concurrent worker per shot (`asyncio.gather`, real concurrency via `asyncio.to_thread` around the blocking image-generation/captioning calls — not a serial loop). Each worker generates a frame using the project's locked style reference (via `gemini-2.5-flash-image` on Vertex AI — the dedicated Imagen API stayed inaccessible for this project even with billing and the Vertex AI API enabled, see `docs/Phases/PHASE-03-FRAME-GENERATION.md`), captions it via Gemini multimodal, and writes the result through a new `write_frame_record` MCP tool. A shot's frame generation and its captioning are independent failure modes: a persistent generation failure (3 retries, exponential backoff) inserts a placeholder and flags the shot; a captioning-only failure keeps the real image and just falls back on alt-text. `GET /api/v1/jobs/{id}` reports live `{"completed", "total", "failed"}` sub-progress for the `frames` step. Frames are written to a local-dev stand-in for Cloud Storage (`agents/.local_storage/`, swapped for real GCS in Phase 6). **Verified live end to end** — real script → real breakdown → real generated frames → real captions, all persisted through the actual API, no mocks.
+
+**Phase 4** — The App-Build Agent generates the project's previs content itself rather than wrapping a Replit API (there is no such API for a normal account — see `docs/Phases/PHASE-04-APP-BUILD-AND-CRITIC.md` §0 for the full correction): a deterministic data layer read live from scenes/shots/frames, plus a single bounded, schema-validated Gemini call for presentation-only values (`accent_color`, `tone_note`) — never structure or content. The Critic Agent independently re-verifies shot-frame coverage and the customization schema before a job is marked complete, with one bounded retry on failure. The result renders at `apps/web`'s own `/projects/{id}/previs` route (scene navigator, shot cards, CSV export) — no separate deployment per project, since the page always reads live from the same tables. **Verified live end to end**, including through a real browser via Playwright.
+
+**Phase 5** — The Iteration Agent turns a director's free-text request into structured shot-field diffs (Gemini, schema-constrained), using the last 10 `ShotEdit` rows as memory for follow-up requests. An ambiguous request (e.g. "make it darker" with nothing to disambiguate against) gets a `needs_clarification` status and a real clarification question back — never a guessed change. A clear request is applied via a new `write_shot_edit` MCP tool (field-name validated against an allowlist independently of the prompt) and triggers a *scoped* App-Build/Critic pass — since Phase 4's design has no per-shot data file to regenerate, this skips the Gemini customization call entirely and only re-verifies the affected shot(s), making a single-field edit measurably faster than a full initial generation (live-measured: ~20s vs. ~90s). `generation_jobs` is mirrored into Firestore (`job_traces/{job_id}`) on every stage transition; the frontend subscribes directly via the Firebase Web SDK for a real push-based live trace panel (falls back to polling if Firestore isn't configured). Firestore access is a deliberate capability-URL tradeoff — public read scoped to exactly `job_traces/{jobId}` (an unguessable UUID never exposed except to the owning user), writes blocked for every client — see `infra/firestore/firestore.rules`. **Verified live end to end**, including through a real browser: a genuine live-push trace update, a completed edit, and a real ambiguous-request clarification, all against live Gemini — plus a real bug caught and fixed via that browser check (a later job that never reaches App-Build no longer hides an already-live previs link).
 
 ## License
 

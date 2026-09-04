@@ -14,6 +14,9 @@ from src.schemas import (
     JobStatusUpdate,
     PrevisCustomizationWriteResult,
     ProjectStateSnapshot,
+    RecentEdits,
+    ShotEditSummary,
+    ShotEditWriteResult,
     WriteResult,
 )
 from src.server import mcp
@@ -193,3 +196,71 @@ async def test_write_previs_customization_rejects_missing_fields():
         with pytest.raises(ToolError):
             await mcp.call_tool("write_previs_customization", {"project_id": "proj-1"})
     mock_write.assert_not_called()
+
+
+async def test_write_shot_edit_persists_a_valid_payload():
+    result = ShotEditWriteResult(
+        shot_id="shot-1",
+        edit_id="edit-1",
+        field="time_of_day",
+        old_value="DAY",
+        new_value="NIGHT",
+        created_at=datetime.now(UTC),
+    )
+    with patch("src.server.write_shot_edit", return_value=result) as mock_write:
+        response = await mcp.call_tool(
+            "write_shot_edit",
+            {
+                "shot_id": "shot-1",
+                "field": "time_of_day",
+                "new_value": "NIGHT",
+                "requested_by": "user-1",
+            },
+        )
+    mock_write.assert_called_once_with("shot-1", "time_of_day", "NIGHT", "user-1")
+    assert response[1]["new_value"] == "NIGHT"
+
+
+async def test_write_shot_edit_rejects_missing_fields():
+    with patch("src.server.write_shot_edit") as mock_write:
+        with pytest.raises(ToolError):
+            await mcp.call_tool("write_shot_edit", {"shot_id": "shot-1"})
+    mock_write.assert_not_called()
+
+
+async def test_write_shot_edit_errors_surface_as_tool_errors():
+    from src.api_client import ApiClientError
+
+    with patch(
+        "src.server.write_shot_edit", side_effect=ApiClientError("apps/api returned 400: bad field")
+    ):
+        with pytest.raises(ToolError, match="bad field"):
+            await mcp.call_tool(
+                "write_shot_edit",
+                {"shot_id": "shot-1", "field": "id", "new_value": "x", "requested_by": "user-1"},
+            )
+
+
+async def test_get_edit_history_returns_recent_edits():
+    result = RecentEdits(
+        edits=[
+            ShotEditSummary(
+                shot_id="shot-1",
+                field="location",
+                old_value="Deck",
+                new_value="Bridge",
+                created_at=datetime.now(UTC),
+            )
+        ]
+    )
+    with patch("src.server.get_edit_history", return_value=result) as mock_get:
+        response = await mcp.call_tool("get_edit_history", {"project_id": "proj-1"})
+    mock_get.assert_called_once_with("proj-1", limit=10)
+    assert response[1]["edits"][0]["field"] == "location"
+
+
+async def test_get_edit_history_forwards_custom_limit():
+    result = RecentEdits(edits=[])
+    with patch("src.server.get_edit_history", return_value=result) as mock_get:
+        await mcp.call_tool("get_edit_history", {"project_id": "proj-1", "limit": 3})
+    mock_get.assert_called_once_with("proj-1", limit=3)
